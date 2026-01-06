@@ -1,0 +1,108 @@
+# Node and frontend dependencies
+node_modules/
+
+# Build artifacts
+dist/
+dist-electron/
+
+# Logs and runtime data
+logs/
+*.log
+*.rdb
+
+# Python
+__pycache__/
+*.py[cod]
+$py.class
+.mypy_cache/
+.pytest_cache/
+venv/
+.venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+dist-packages/
+*.egg
+poetry.lock
+
+# Databases and runtime files and db lock suffix
+*.sqlite3
+*.db
+*.db.lock
+
+# macOS
+.DS_Store
+
+# Editors/IDEs
+/.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary/backup
+*.swp
+*~
+*.bak
+*.old
+*.orig
+*.prev
+*.save
+*.tmp
+*.temp
+
+# Electron / build / runtime
+out/
+build/
+runtime/
+
+# LLM / large files
+llama-cpp/
+models/
+pretrained/
+
+# Service runtimes
+redis-server/
+mongodb/
+milvus/
+services/local_rag_dist/
+
+# Misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json~
+
+# Ignore GitHub workflows cache or metadata (keep repo config tracked)
+# .github/  # intentionally tracked
+
+# Model weight files
+*.gguf
+*.bin
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.pb
+*.tflite
+*.weights
+
+# Local environment directories
+log/
+
+backend/
+
+storage/
+
+.github/
+
+release/
+
+# Reference and Test Scripts
+for_ref_llama_cpp_usage.py
+test_file_api.py
+test_models.py
+question.sh
+
+package-lock.json

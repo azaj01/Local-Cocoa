@@ -1,0 +1,910 @@
+import { app } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
+
+import type {
+    AgentDiagnostics,
+    AgentStep,
+    AgentStepFile,
+    FileKind,
+    FileListResponse,
+    FileRecord,
+    FolderRecord,
+    HealthStatus,
+    ServiceStatus,
+    IndexInventory,
+    IndexProgressUpdate,
+    IndexSummary,
+    IndexingItem,
+    NoteContent,
+    NoteDraftPayload,
+    NoteSummary,
+    QaResponse,
+    SearchHit,
+    SearchResponse,
+    ActivityLog,
+    ActivityTimelineResponse,
+    ChatSession,
+    ConversationMessage,
+    ChunkSnapshot,
+} from './types';
+
+export interface FailedFile {
+    path: string;
+    reason: string;
+    timestamp: string;
+}
+
+const API_BASE_URL = process.env.LOCAL_RAG_API_URL ?? 'http://127.0.0.1:8890';
+
+export type IndexOperationMode = 'rescan' | 'reindex';
+export type IndexOperationScope = 'global' | 'folder' | 'notes';
+
+export interface IndexOperationOptions {
+    mode?: IndexOperationMode;
+    scope?: IndexOperationScope;
+    folders?: string[];
+    files?: string[];
+    refreshEmbeddings?: boolean;
+    dropCollection?: boolean;
+    purgeFolders?: string[];
+    indexing_mode?: 'fast' | 'fine';
+}
+
+let cachedKey: string | null = null;
+
+function getLocalKey(): string | null {
+    // Always try to read the key if not cached yet
+    if (cachedKey) return cachedKey;
+    
+    let ragHome: string;
+    
+    // In development mode, use LOCAL_RAG_HOME env var if set
+    // In production (packaged app), always use userData path
+    if (!app.isPackaged && process.env.LOCAL_RAG_HOME) {
+        ragHome = process.env.LOCAL_RAG_HOME;
+    } else {
+        try {
+            const userDataPath = app.getPath('userData');
+            ragHome = path.join(userDataPath, 'local_rag');
+        } catch (e) {
+            console.error('[BackendClient] Failed to get userData path:', e);
+            return null;
+        }
+    }
+    
+    const keyPath = path.join(ragHome, 'local_key.txt');
+    try {
+        if (fs.existsSync(keyPath)) {
+            const key = fs.readFileSync(keyPath, 'utf-8').trim();
+            if (key) {
+                cachedKey = key;
+                console.log('[BackendClient] API key loaded successfully from:', keyPath);
+                return cachedKey;
+            }
+        } else {
+            console.log('[BackendClient] Key file not found yet:', keyPath);
+        }
+    } catch (e) {
+        console.error('[BackendClient] Failed to read local key:', e);
+    }
+    return null;
+}
+
+// Function to clear the cached key (useful when backend restarts)
+export function clearCachedKey(): void {
+    cachedKey = null;
+}
+
+function resolveEndpoint(endpoint: string): string {
+    if (/^https?:\/\//i.test(endpoint)) {
+        return endpoint;
+    }
+    const base = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+    const pathPart = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${base}${pathPart}`;
+}
+
+async function requestJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
+    const headers = new Headers(init?.headers ?? {});
+    if (!headers.has('content-type') && !(init?.body instanceof FormData)) {
+        headers.set('content-type', 'application/json');
+    }
+
+    const key = getLocalKey();
+    if (key) {
+        headers.set('X-API-Key', key);
+        // Debug: only log first 20 chars of key for security
+        if (endpoint === '/health') {
+            console.log(`[BackendClient] Using API key: ${key.substring(0, 20)}...`);
+        }
+    } else {
+        console.warn('[BackendClient] No API key available for request to:', endpoint);
+    }
+
+    const url = resolveEndpoint(endpoint);
+    try {
+        const response = await fetch(url, {
+            ...init,
+            headers
+        });
+
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new Error(`Backend responded with ${response.status}${text ? `: ${text}` : ''}`);
+        }
+
+        if (response.status === 204) {
+            return {} as T;
+        }
+
+        return (await response.json()) as T;
+    } catch (error) {
+        console.error(`[BackendClient] Fetch failed for ${url}:`, error);
+        throw error;
+    }
+}
+
+async function requestBinary(endpoint: string, init?: RequestInit): Promise<Uint8Array> {
+    const url = resolveEndpoint(endpoint);
+    const headers = new Headers(init?.headers ?? {});
+    
+    const key = getLocalKey();
+    if (key) {
+        headers.set('X-API-Key', key);
+    }
+
+    try {
+        const response = await fetch(url, {
+            ...init,
+            headers
+        });
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new Error(`Backend responded with ${response.status}${text ? `: ${text}` : ''}`);
+        }
+        const buffer = (await response.arrayBuffer()) as any;
+        return new Uint8Array(buffer);
+    } catch (error) {
+        console.error(`[BackendClient] Fetch failed for ${url}:`, error);
+        throw error;
+    }
+}
+
+function mapAgentStepFile(payload: any): AgentStepFile {
+    return {
+        fileId: String(payload.file_id ?? payload.fileId ?? ''),
+        label: payload.label ?? '',
+        score: payload.score ?? null
+    };
+}
+
+function mapAgentStep(payload: any): AgentStep {
+    const files = Array.isArray(payload.files) ? payload.files.map(mapAgentStepFile) : [];
+    const fallbackId = `step-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return {
+        id: String(payload.id ?? payload.step_id ?? fallbackId),
+        title: payload.title ?? 'Step',
+        detail: payload.detail ?? null,
+        status: payload.status ?? 'complete',
+        queries: Array.isArray(payload.queries) ? payload.queries.map(String) : [],
+        items: Array.isArray(payload.items) ? payload.items.map(String) : [],
+        files,
+        durationMs: payload.duration_ms ?? payload.durationMs ?? null
+    } satisfies AgentStep;
+}
+
+function mapDiagnostics(payload: any): AgentDiagnostics | undefined {
+    if (!payload) {
+        return undefined;
+    }
+    const steps = Array.isArray(payload.steps) ? payload.steps.map(mapAgentStep) : [];
+    const summary = payload.summary ?? null;
+    if (!steps.length && !summary) {
+        return undefined;
+    }
+    return {
+        steps,
+        summary
+    } satisfies AgentDiagnostics;
+}
+
+function mapFailedFile(payload: any): FailedFile {
+    return {
+        path: String(payload.path ?? ''),
+        reason: String(payload.reason ?? ''),
+        timestamp: payload.timestamp ?? new Date().toISOString()
+    };
+}
+
+function mapFolder(payload: any): FolderRecord {
+    return {
+        id: String(payload.id),
+        label: payload.label ?? payload.path ?? 'Folder',
+        path: payload.path ?? '',
+        createdAt: payload.created_at ?? payload.createdAt ?? new Date().toISOString(),
+        updatedAt: payload.updated_at ?? payload.updatedAt ?? new Date().toISOString(),
+        lastIndexedAt: payload.last_indexed_at ?? payload.lastIndexedAt ?? null,
+        enabled: payload.enabled ?? true,
+        failedFiles: Array.isArray(payload.failed_files) ? payload.failed_files.map(mapFailedFile) : [],
+        indexedCount: Number(payload.indexed_count ?? payload.indexedCount ?? 0)
+    };
+}
+
+function mapFile(payload: any): FileRecord & { fullPath?: string; location?: string } {
+    const path = payload.path ?? '';
+    return {
+        id: String(payload.id),
+        folderId: String(payload.folder_id ?? payload.folderId ?? ''),
+        path,
+        name: payload.name ?? payload.filename ?? 'Unnamed',
+        extension: payload.extension ?? '',
+        size: Number(payload.size ?? 0),
+        modifiedAt: payload.modified_at ?? payload.modifiedAt ?? new Date().toISOString(),
+        createdAt: payload.created_at ?? payload.createdAt ?? new Date().toISOString(),
+        kind: (payload.kind ?? 'other') as FileKind,
+        summary: payload.summary ?? null,
+        metadata: payload.metadata ?? {},
+        // Index status tracking
+        indexStatus: payload.index_status ?? payload.indexStatus ?? 'indexed',
+        errorReason: payload.error_reason ?? payload.errorReason ?? null,
+        errorAt: payload.error_at ?? payload.errorAt ?? null,
+        // Extended fields for IndexedFile
+        fullPath: payload.full_path ?? payload.fullPath ?? path,
+        location: payload.location ?? '',
+    };
+}
+
+function mapProgress(payload: any): IndexProgressUpdate {
+    return {
+        status: payload.status ?? 'idle',
+        startedAt: payload.started_at ?? payload.startedAt ?? null,
+        completedAt: payload.completed_at ?? payload.completedAt ?? null,
+        processed: Number(payload.processed ?? 0),
+        failed: Number(payload.failed ?? 0),
+        failedItems: Array.isArray(payload.failed_items) ? payload.failed_items.map(mapFailedFile) : [],
+        total: payload.total ?? null,
+        message: payload.message ?? null,
+        lastError: payload.last_error ?? payload.lastError ?? null
+    };
+}
+
+function mapSummary(payload: any): IndexSummary {
+    return {
+        filesIndexed: Number(payload.files_indexed ?? payload.filesIndexed ?? 0),
+        totalSizeBytes: Number(payload.total_size_bytes ?? payload.totalSizeBytes ?? 0),
+        foldersIndexed: Number(payload.folders_indexed ?? payload.foldersIndexed ?? 0),
+        lastCompletedAt: payload.last_completed_at ?? payload.lastCompletedAt ?? null
+    };
+}
+
+function mapIndexingItem(payload: any): IndexingItem {
+    return {
+        folderId: String(payload.folder_id ?? payload.folderId ?? ''),
+        folderPath: payload.folder_path ?? payload.folderPath ?? '',
+        filePath: payload.file_path ?? payload.filePath ?? '',
+        fileId: payload.file_id ?? payload.fileId ?? null,
+        fileName: payload.file_name ?? payload.fileName ?? null,
+        status: (payload.status ?? 'pending') as IndexingItem['status'],
+        startedAt: payload.started_at ?? payload.startedAt ?? null,
+        progress: typeof payload.progress === 'number' ? payload.progress : null,
+
+        kind: payload.kind ?? null,
+        stage: payload.stage ?? null,
+        detail: payload.detail ?? null,
+        stepCurrent: typeof payload.step_current === 'number' ? payload.step_current : (payload.stepCurrent ?? null),
+        stepTotal: typeof payload.step_total === 'number' ? payload.step_total : (payload.stepTotal ?? null),
+        recentEvents: Array.isArray(payload.recent_events)
+            ? payload.recent_events
+            : (Array.isArray(payload.recentEvents) ? payload.recentEvents : [])
+    };
+}
+
+function mapServiceStatus(payload: any): ServiceStatus {
+    return {
+        name: payload.name ?? 'Unknown',
+        status: payload.status ?? 'unknown',
+        latencyMs: payload.latency_ms ?? payload.latencyMs ?? null,
+        details: payload.details ?? null
+    };
+}
+
+function mapHealth(payload: any): HealthStatus {
+    return {
+        status: payload.status ?? 'idle',
+        indexedFiles: Number(payload.indexed_files ?? payload.indexedFiles ?? 0),
+        watchedFolders: Number(payload.watched_folders ?? payload.watchedFolders ?? 0),
+        message: payload.message ?? null,
+        services: Array.isArray(payload.services) ? payload.services.map(mapServiceStatus) : []
+    };
+}
+
+function mapSearchHit(payload: any): SearchHit {
+    return {
+        fileId: String(payload.file_id ?? payload.fileId ?? ''),
+        score: Number(payload.score ?? 0),
+        summary: payload.summary ?? null,
+        snippet: payload.snippet ?? null,
+        metadata: payload.metadata ?? {},
+        chunkId: payload.chunk_id ?? payload.chunkId ?? null,
+        // Chunk analysis results from LLM
+        analysisComment: payload.analysis_comment ?? payload.analysisComment ?? null,
+        hasAnswer: payload.has_answer ?? payload.hasAnswer,
+        analysisConfidence: payload.analysis_confidence ?? payload.analysisConfidence
+    };
+}
+
+function mapSearchResponse(payload: any): SearchResponse {
+    const hits = Array.isArray(payload.hits) ? payload.hits.map(mapSearchHit) : [];
+    const variantsSource = payload.query_variants ?? payload.queryVariants;
+    const queryVariants = Array.isArray(variantsSource)
+        ? variantsSource.map((item: any) => String(item)).filter(Boolean)
+        : [];
+    return {
+        query: payload.query ?? '',
+        hits,
+        rewrittenQuery: payload.rewritten_query ?? payload.rewrittenQuery ?? null,
+        queryVariants,
+        strategy: payload.strategy ?? 'vector',
+        latencyMs: payload.latency_ms ?? payload.latencyMs ?? null,
+        diagnostics: mapDiagnostics(payload.diagnostics)
+    };
+}
+
+function mapQaResponse(payload: any): QaResponse {
+    const hits = Array.isArray(payload.hits) ? payload.hits.map(mapSearchHit) : [];
+    const variantsSource = payload.query_variants ?? payload.queryVariants;
+    const queryVariants = Array.isArray(variantsSource)
+        ? variantsSource.map((item: any) => String(item)).filter(Boolean)
+        : [];
+    return {
+        answer: payload.answer ?? '',
+        hits,
+        latencyMs: Number(payload.latency_ms ?? payload.latencyMs ?? 0),
+        rewrittenQuery: payload.rewritten_query ?? payload.rewrittenQuery ?? null,
+        queryVariants,
+        diagnostics: mapDiagnostics(payload.diagnostics)
+    };
+}
+
+function mapNoteSummary(payload: any): NoteSummary {
+    return {
+        id: String(payload.id ?? ''),
+        title: payload.title ?? 'Untitled note',
+        updatedAt: payload.updated_at ?? payload.updatedAt ?? new Date().toISOString(),
+        preview: payload.preview ?? null
+    };
+}
+
+function mapNoteContent(payload: any): NoteContent {
+    return {
+        id: String(payload.id ?? ''),
+        title: payload.title ?? 'Untitled note',
+        markdown: payload.markdown ?? '',
+        createdAt: payload.created_at ?? payload.createdAt ?? new Date().toISOString(),
+        updatedAt: payload.updated_at ?? payload.updatedAt ?? new Date().toISOString(),
+        preview: payload.preview ?? null
+    };
+}
+
+function mapChatMessage(payload: any): ConversationMessage {
+    return {
+        role: payload.role ?? 'user',
+        text: payload.content ?? payload.text ?? '',
+        timestamp: payload.timestamp ?? new Date().toISOString(),
+        meta: payload.meta ?? undefined,
+        references: Array.isArray(payload.references) ? payload.references.map(mapSearchHit) : undefined,
+        // Multi-path thinking steps
+        isMultiPath: payload.is_multi_path ?? payload.isMultiPath,
+        thinkingSteps: Array.isArray(payload.thinking_steps ?? payload.thinkingSteps) 
+            ? (payload.thinking_steps ?? payload.thinkingSteps) 
+            : undefined
+    };
+}
+
+function mapChatSession(payload: any): ChatSession {
+    return {
+        id: String(payload.id ?? ''),
+        title: payload.title ?? 'New Chat',
+        messages: Array.isArray(payload.messages) ? payload.messages.map(mapChatMessage) : [],
+        updatedAt: payload.updated_at ?? payload.updatedAt ?? new Date().toISOString()
+    };
+}
+
+export async function updateSettings(settings: { 
+    vision_max_pixels?: number;
+    search_result_limit?: number;
+    qa_context_limit?: number;
+    max_snippet_length?: number;
+    summary_max_tokens?: number;
+    embed_batch_size?: number;
+    embed_batch_delay_ms?: number;
+    vision_batch_delay_ms?: number;
+    pdf_one_chunk_per_page?: boolean;
+}): Promise<void> {
+    await requestJson('/settings/', {
+        method: 'PATCH',
+        body: JSON.stringify(settings)
+    });
+}
+
+export async function getHealth(): Promise<HealthStatus> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    try {
+        const data = await requestJson('/health', {
+            method: 'GET',
+            signal: controller.signal as any // Cast to any because Electron types might mismatch
+        });
+        clearTimeout(timeoutId);
+        return mapHealth(data);
+    } catch (error) {
+        clearTimeout(timeoutId);
+        console.warn('Health check failed or timed out:', error);
+        // Return offline status instead of throwing to prevent blocking other calls
+        return {
+            status: 'degraded',
+            indexedFiles: 0,
+            watchedFolders: 0,
+            message: 'Backend unreachable'
+        };
+    }
+}
+
+export async function listFolders(): Promise<FolderRecord[]> {
+    const data = await requestJson<{ folders: any[] }>('/folders', { method: 'GET' });
+    const folders = Array.isArray(data.folders) ? data.folders : [];
+    return folders.map(mapFolder);
+}
+
+export async function addFolder(pathValue: string, label?: string, scanMode?: 'full' | 'manual'): Promise<FolderRecord> {
+    const payload = { path: pathValue, label, scan_mode: scanMode || 'full' };
+    const data = await requestJson('/folders', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+    return mapFolder(data);
+}
+
+export async function removeFolder(folderId: string): Promise<void> {
+    await requestJson(`/folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' });
+}
+
+export async function runIndex(options?: IndexOperationOptions): Promise<IndexProgressUpdate> {
+    const inferredMode: IndexOperationMode = options?.mode
+        ?? ((options?.dropCollection || (options?.purgeFolders && options.purgeFolders.length)) ? 'reindex' : 'rescan');
+    const inferredScope: IndexOperationScope = options?.scope
+        ?? ((options?.folders && options.folders.length) ? 'folder' : 'global');
+
+    const payload: Record<string, unknown> = {
+        mode: inferredMode,
+        scope: inferredScope,
+        folders: options?.folders ?? null,
+        files: options?.files ?? null,
+    };
+    
+    // Only set indexing_mode if explicitly provided; otherwise let backend use configured default
+    if (options?.indexing_mode) {
+        payload.indexing_mode = options.indexing_mode;
+    }
+
+    if (options?.refreshEmbeddings !== undefined) {
+        payload.refresh_embeddings = options.refreshEmbeddings;
+    }
+    if (options?.dropCollection !== undefined) {
+        payload.drop_collection = options.dropCollection;
+    }
+
+    if (options?.purgeFolders !== undefined) {
+        payload.purge_folders = options.purgeFolders;
+    } else if (inferredMode === 'reindex' && inferredScope !== 'global') {
+        payload.purge_folders = options?.folders ?? [];
+    }
+
+    const data = await requestJson('/index/run', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+    return mapProgress(data);
+}
+
+export async function getIndexStatus(): Promise<IndexProgressUpdate> {
+    const data = await requestJson('/index/status', { method: 'GET' });
+    return mapProgress(data);
+}
+
+export async function pauseIndexing(): Promise<IndexProgressUpdate> {
+    const data = await requestJson('/index/pause', { method: 'POST' });
+    return mapProgress(data);
+}
+
+export async function resumeIndexing(): Promise<IndexProgressUpdate> {
+    const data = await requestJson('/index/resume', { method: 'POST' });
+    return mapProgress(data);
+}
+
+export async function getIndexSummary(): Promise<IndexSummary> {
+    const data = await requestJson('/index/summary', { method: 'GET' });
+    return mapSummary(data);
+}
+
+export async function getIndexInventory(options?: { folderId?: string; limit?: number; offset?: number }): Promise<IndexInventory> {
+    const url = new URL(resolveEndpoint('/index/list'));
+    if (options?.limit !== undefined) {
+        url.searchParams.set('limit', String(options.limit));
+    }
+    if (options?.offset !== undefined) {
+        url.searchParams.set('offset', String(options.offset));
+    }
+    if (options?.folderId) {
+        url.searchParams.set('folder_id', options.folderId);
+    }
+    const data = await requestJson<{ files: any[]; total?: number; indexing?: any[]; progress?: any }>(url.toString(), { method: 'GET' });
+    const files = Array.isArray(data.files) ? data.files.map(mapFile) : [];
+    const indexing = Array.isArray(data.indexing) ? data.indexing.map(mapIndexingItem) : [];
+    return {
+        files,
+        total: Number(data.total ?? files.length),
+        indexing,
+        progress: mapProgress(data.progress ?? {})
+    };
+}
+
+export async function listIndexedFiles(limit = 500, offset = 0): Promise<FileListResponse> {
+    const url = new URL(resolveEndpoint('/files'));
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    const data = await requestJson<{ files: any[]; total?: number }>(url.toString(), { method: 'GET' });
+    const files = Array.isArray(data.files) ? data.files.map(mapFile) : [];
+    return {
+        files,
+        total: Number(data.total ?? files.length)
+    };
+}
+
+export async function getChunkById(chunkId: string): Promise<ChunkSnapshot | null> {
+    if (!chunkId) {
+        return null;
+    }
+    try {
+        const data = await requestJson<any>(resolveEndpoint(`/files/chunks/${encodeURIComponent(chunkId)}`), {
+            method: 'GET',
+        });
+        // ChunkSnapshot schema in TS already matches backend, so we can return as-is
+        return data as ChunkSnapshot;
+    } catch (error) {
+        console.error(`Failed to get chunk ${chunkId}:`, error);
+        return null;
+    }
+}
+
+export async function listChunksForFile(fileId: string): Promise<ChunkSnapshot[]> {
+    if (!fileId) {
+        return [];
+    }
+
+    const url = resolveEndpoint(`/files/${encodeURIComponent(fileId)}/chunks`);
+    try {
+        const data = await requestJson<ChunkSnapshot[]>(url, { method: 'GET' });
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.error(`Failed to list chunks for file ${fileId}:`, error);
+        return [];
+    }
+}
+
+export async function getFileById(fileId: string): Promise<FileRecord | null> {
+    try {
+        const data = await requestJson<any>(resolveEndpoint(`/files/${fileId}`), { method: 'GET' });
+        return mapFile(data);
+    } catch (error) {
+        console.error(`Failed to get file ${fileId}:`, error);
+        return null;
+    }
+}
+
+export async function deleteIndexedFile(fileId: string): Promise<void> {
+    await requestJson(`/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+}
+
+export async function searchFiles(query: string, limit = 10): Promise<SearchResponse> {
+    const trimmed = query?.trim() ?? '';
+    if (!trimmed) {
+        return {
+            query: '',
+            hits: [],
+            rewrittenQuery: null,
+            queryVariants: [],
+            strategy: 'vector',
+            latencyMs: 0
+        };
+    }
+    const url = new URL(resolveEndpoint('/search'));
+    url.searchParams.set('q', trimmed);
+    url.searchParams.set('limit', String(limit));
+    const data = await requestJson<{ query: string; hits: any[] }>(url.toString(), { method: 'GET' });
+    return mapSearchResponse(data);
+}
+
+/**
+ * Progressive/layered search with streaming results.
+ * Yields incremental results from: filename → summary → metadata → hybrid vector search
+ */
+export async function searchFilesStream(
+    query: string,
+    limit = 10,
+    onData: (chunk: string) => void,
+    onError: (error: Error) => void,
+    onDone: () => void
+): Promise<void> {
+    const trimmed = query?.trim() ?? '';
+    if (!trimmed) {
+        onDone();
+        return;
+    }
+
+    try {
+        const headers: Record<string, string> = {};
+        const key = getLocalKey();
+        if (key) {
+            headers['X-API-Key'] = key;
+        }
+
+        const url = new URL(resolveEndpoint('/search/stream'));
+        url.searchParams.set('q', trimmed);
+        url.searchParams.set('limit', String(limit));
+
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers,
+        });
+
+        if (!response.ok) {
+            throw new Error(`Backend responded with ${response.status}`);
+        }
+
+        if (!response.body) {
+            throw new Error('No response body');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            const chunk = decoder.decode(value, { stream: true });
+            onData(chunk);
+        }
+        onDone();
+    } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+export async function askWorkspace(
+    query: string, 
+    limit = 5, 
+    mode: 'qa' | 'chat' = 'qa',
+    searchMode: 'auto' | 'knowledge' | 'direct' = 'auto'
+): Promise<QaResponse> {
+    const payload = { query, mode, limit, search_mode: searchMode };
+    const data = await requestJson<{ answer: string; hits: any[]; latency_ms?: number }>(
+        '/qa',
+        {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        }
+    );
+    return mapQaResponse(data);
+}
+
+export async function askWorkspaceStream(
+    query: string,
+    limit = 5,
+    mode: 'qa' | 'chat' = 'qa',
+    onData: (chunk: string) => void,
+    onError: (error: Error) => void,
+    onDone: () => void,
+    searchMode: 'auto' | 'knowledge' | 'direct' = 'auto'
+): Promise<void> {
+    const payload = { query, mode, limit, search_mode: searchMode };
+    try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const key = getLocalKey();
+        if (key) {
+            headers['X-API-Key'] = key;
+        }
+
+        const response = await fetch(resolveEndpoint('/qa/stream'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Backend responded with ${response.status}`);
+        }
+
+        if (!response.body) {
+            throw new Error('No response body');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            const chunk = decoder.decode(value, { stream: true });
+            onData(chunk);
+        }
+        onDone();
+    } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+
+export async function listNotes(): Promise<NoteSummary[]> {
+    const data = await requestJson<any[]>('/notes', { method: 'GET' });
+    const payload = Array.isArray(data) ? data : [];
+    return payload.map(mapNoteSummary);
+}
+
+export async function createNote(payload: NoteDraftPayload): Promise<NoteSummary> {
+    const body = {
+        title: payload.title ?? null,
+        body: payload.body ?? null
+    };
+    const data = await requestJson('/notes', {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+    return mapNoteSummary(data);
+}
+
+export async function getNote(noteId: string): Promise<NoteContent> {
+    const data = await requestJson(`/notes/${encodeURIComponent(noteId)}`, { method: 'GET' });
+    return mapNoteContent(data);
+}
+
+export async function updateNote(noteId: string, payload: NoteDraftPayload): Promise<NoteContent> {
+    const body = {
+        title: payload.title ?? null,
+        body: payload.body ?? null
+    };
+    const data = await requestJson(`/notes/${encodeURIComponent(noteId)}`, {
+        method: 'PUT',
+        body: JSON.stringify(body)
+    });
+    return mapNoteContent(data);
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+    await requestJson(`/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' });
+}
+
+export async function ingestScreenshot(imageBytes: Uint8Array): Promise<ActivityLog> {
+    const formData = new FormData();
+    // Cast to any to avoid TS issues with ArrayBufferLike vs ArrayBuffer in Electron types
+    const blob = new Blob([imageBytes as any], { type: 'image/jpeg' });
+    formData.append('file', blob, 'screenshot.jpg');
+
+    const headers: Record<string, string> = {};
+    const key = getLocalKey();
+    if (key) {
+        headers['X-API-Key'] = key;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/activity/ingest`, {
+        method: 'POST',
+        headers,
+        body: formData
+    });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Failed to ingest screenshot: ${response.status}${text ? `: ${text}` : ''}`);
+    }
+
+    return (await response.json()) as ActivityLog;
+}
+
+export async function getChunkHighlightPngBase64(chunkId: string, zoom: number = 2.0): Promise<string> {
+    if (!chunkId) {
+        throw new Error('Missing chunk id.');
+    }
+    const params = new URLSearchParams();
+    params.set('zoom', String(zoom));
+    const bytes = await requestBinary(`/files/chunks/${encodeURIComponent(chunkId)}/highlight.png?${params.toString()}`, {
+        method: 'GET'
+    });
+    // Electron main process has Node Buffer.
+    return Buffer.from(bytes).toString('base64');
+}
+
+export async function getActivityTimeline(start?: string, end?: string, summary: boolean = false): Promise<ActivityTimelineResponse> {
+    const params = new URLSearchParams();
+    if (start) params.append('start', start);
+    if (end) params.append('end', end);
+    if (summary) params.append('summary', 'true');
+
+    const headers: Record<string, string> = {};
+    const key = getLocalKey();
+    if (key) {
+        headers['X-API-Key'] = key;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/activity/timeline?${params.toString()}`, {
+        headers
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to get activity timeline: ${response.statusText}`);
+    }
+
+    return (await response.json()) as ActivityTimelineResponse;
+}
+
+export async function deleteActivityLog(logId: string): Promise<void> {
+    await requestJson(`/activity/${encodeURIComponent(logId)}`, { method: 'DELETE' });
+}
+
+export async function listChatSessions(limit = 100, offset = 0): Promise<ChatSession[]> {
+    const url = new URL(resolveEndpoint('/chat/sessions'));
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    const data = await requestJson<any[]>(url.toString(), { method: 'GET' });
+    const payload = Array.isArray(data) ? data : [];
+    return payload.map(mapChatSession);
+}
+
+export async function createChatSession(title?: string): Promise<ChatSession> {
+    const body = { title };
+    const data = await requestJson('/chat/sessions', {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+    return mapChatSession(data);
+}
+
+export async function getChatSession(sessionId: string): Promise<ChatSession> {
+    const data = await requestJson(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'GET' });
+    return mapChatSession(data);
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+    await requestJson(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+}
+
+export async function updateChatSession(sessionId: string, title: string): Promise<ChatSession> {
+    const body = { title };
+    const data = await requestJson(`/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PUT',
+        body: JSON.stringify(body)
+    });
+    return mapChatSession(data);
+}
+
+export async function addChatMessage(sessionId: string, message: Partial<ConversationMessage>): Promise<ConversationMessage> {
+    const body = {
+        role: message.role,
+        content: message.text,
+        meta: message.meta,
+        references: message.references,
+        // Multi-path thinking steps
+        is_multi_path: message.isMultiPath,
+        thinking_steps: message.thinkingSteps
+    };
+    const data = await requestJson(`/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+    return mapChatMessage(data);
+}

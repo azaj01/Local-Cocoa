@@ -1,0 +1,702 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222.2 84% 4.9%;
+        --primary: 221.2 83.2% 53.3%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 221.2 83.2% 53.3%;
+        --radius: 0.5rem;
+    }
+
+    .dark {
+        --background: 222.2 84% 4.9%;
+        --foreground: 210 40% 98%;
+        --card: 222.2 84% 4.9%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222.2 84% 4.9%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 217.2 91.2% 59.8%;
+        --primary-foreground: 222.2 47.4% 11.2%;
+        --secondary: 217.2 32.6% 17.5%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217.2 32.6% 17.5%;
+        --muted-foreground: 215 20.2% 65.1%;
+        --accent: 217.2 32.6% 17.5%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217.2 32.6% 17.5%;
+        --input: 217.2 32.6% 17.5%;
+        --ring: 224.3 76.3% 48%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+html {
+    background-color: transparent;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    overflow: hidden;
+    /* Allow text selection by default; specific drag handles keep selection disabled */
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+body.spotlight-shell {
+    background-color: transparent;
+}
+
+input,
+textarea,
+button,
+select,
+label,
+[contenteditable='true'],
+.allow-text-selection {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.app-drag-handle {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    -webkit-app-region: drag;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: auto;
+    z-index: 9999;
+}
+
+.app-no-drag {
+    -webkit-app-region: no-drag;
+}
+
+.app-drag-surface {
+    -webkit-app-region: drag;
+}
+
+.app-drag-surface .app-no-drag {
+    -webkit-app-region: no-drag;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+    margin: 0.75rem 0 0.5rem;
+    font-weight: 600;
+}
+
+.markdown-preview p {
+    margin: 0.5rem 0;
+    line-height: 1.6;
+}
+
+.markdown-preview ul {
+    margin: 0.5rem 0 0.5rem 1.25rem;
+    list-style: disc;
+}
+
+.markdown-preview code {
+    background-color: rgba(148, 163, 184, 0.15);
+    padding: 0.15rem 0.35rem;
+    border-radius: 0.35rem;
+    font-size: 0.85em;
+}
+
+.markdown-preview pre {
+    background-color: rgba(15, 23, 42, 0.9);
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    overflow-x: auto;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+}
+
+@layer utilities {
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+}
+
+/* Year In Review Animations */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scale-in {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-slide-up {
+    animation: slide-up 0.6s ease-out forwards;
+}
+
+.animate-scale-in {
+    animation: scale-in 0.4s ease-out forwards;
+}
+
+/* Custom scrollbar for Year In Review */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Shimmer animation for Year 2025 button */
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* ============================================
+   SKIN: Local Cocoa
+   A warm, cozy cocoa-inspired theme
+   ============================================ */
+
+/* Local Cocoa skin fonts - using system fonts for offline compatibility */
+
+.skin-local-cocoa {
+    /* Cocoa color palette */
+    --cocoa-cream: #f5e6d3;
+    --cocoa-light: #e8d4bc;
+    --cocoa-medium: #c9a87c;
+    --cocoa-warm: #b8956f;
+    --cocoa-brown: #8b6914;
+    --cocoa-dark: #5c4a2a;
+    --cocoa-deep: #3d2f1c;
+    --cocoa-accent: #d4a855;
+    --cocoa-gold: #c9a227;
+    --cocoa-sidebar: #2a1f14;
+    --cocoa-sidebar-text: #e8d4bc;
+    
+    /* Override CSS variables for light mode */
+    --background: 35 40% 94%;
+    --foreground: 30 50% 15%;
+    --card: 35 35% 90%;
+    --card-foreground: 30 50% 15%;
+    --popover: 35 40% 92%;
+    --popover-foreground: 30 50% 15%;
+    --primary: 35 70% 45%;
+    --primary-foreground: 35 40% 98%;
+    --secondary: 35 25% 85%;
+    --secondary-foreground: 30 50% 20%;
+    --muted: 35 25% 88%;
+    --muted-foreground: 30 25% 40%;
+    --accent: 35 45% 75%;
+    --accent-foreground: 30 50% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 35 30% 80%;
+    --input: 35 30% 82%;
+    --ring: 35 70% 45%;
+}
+
+.skin-local-cocoa.dark {
+    --background: 30 30% 8%;
+    --foreground: 35 30% 90%;
+    --card: 30 25% 12%;
+    --card-foreground: 35 30% 90%;
+    --popover: 30 25% 10%;
+    --popover-foreground: 35 30% 90%;
+    --primary: 35 70% 50%;
+    --primary-foreground: 30 30% 10%;
+    --secondary: 30 20% 18%;
+    --secondary-foreground: 35 30% 90%;
+    --muted: 30 20% 15%;
+    --muted-foreground: 35 20% 60%;
+    --accent: 30 25% 22%;
+    --accent-foreground: 35 30% 90%;
+    --border: 30 20% 20%;
+    --input: 30 20% 18%;
+    --ring: 35 70% 50%;
+}
+
+/* Local Cocoa Sidebar Styling */
+.skin-local-cocoa .cocoa-sidebar {
+    background: linear-gradient(180deg, #2a1f14 0%, #1f1610 100%);
+    border-right-color: #3d2f1c;
+}
+
+.skin-local-cocoa .cocoa-sidebar-logo {
+    font-family: 'Snell Roundhand', 'Apple Chancery', 'Zapfino', 'Brush Script MT', cursive;
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--cocoa-cream);
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Minimalist Sidebar Logo */
+.skin-minimalist .minimalist-sidebar-logo {
+    font-family: 'Snell Roundhand', 'Apple Chancery', 'Zapfino', 'Brush Script MT', cursive;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: hsl(var(--primary));
+}
+
+/* Local Cocoa Main Content Area */
+.skin-local-cocoa .cocoa-main-bg {
+    position: relative;
+    background: 
+        linear-gradient(135deg, 
+            rgba(245, 230, 211, 0.95) 0%, 
+            rgba(232, 212, 188, 0.9) 50%, 
+            rgba(185, 140, 90, 0.85) 100%
+        );
+}
+
+.skin-local-cocoa.dark .cocoa-main-bg {
+    background: 
+        linear-gradient(135deg, 
+            rgba(42, 31, 20, 0.98) 0%, 
+            rgba(35, 25, 15, 0.95) 50%, 
+            rgba(60, 45, 28, 0.9) 100%
+        );
+}
+
+/* Cocoa pattern - removed, using real images instead */
+
+/* Header glassmorphism effect */
+.skin-local-cocoa .cocoa-header-glass {
+    background: rgba(255, 248, 240, 0.7) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(201, 168, 124, 0.3) !important;
+}
+
+.skin-local-cocoa.dark .cocoa-header-glass {
+    background: rgba(42, 31, 20, 0.7) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Cocoa Mascot */
+.skin-local-cocoa .cocoa-mascot {
+    width: 64px;
+    height: 64px;
+}
+
+/* Suggestion Cards for Local Cocoa */
+.skin-local-cocoa .cocoa-suggestion-card {
+    background: linear-gradient(135deg, 
+        rgba(212, 168, 85, 0.2) 0%, 
+        rgba(201, 162, 39, 0.15) 100%
+    );
+    border-color: var(--cocoa-medium);
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.skin-local-cocoa .cocoa-suggestion-card:hover {
+    background: linear-gradient(135deg, 
+        rgba(212, 168, 85, 0.35) 0%, 
+        rgba(201, 162, 39, 0.25) 100%
+    );
+    border-color: var(--cocoa-warm);
+    transform: translateY(-1px);
+}
+
+.skin-local-cocoa.dark .cocoa-suggestion-card {
+    background: linear-gradient(135deg, 
+        rgba(212, 168, 85, 0.15) 0%, 
+        rgba(139, 105, 20, 0.1) 100%
+    );
+    border-color: rgba(201, 168, 124, 0.3);
+}
+
+.skin-local-cocoa.dark .cocoa-suggestion-card:hover {
+    background: linear-gradient(135deg, 
+        rgba(212, 168, 85, 0.25) 0%, 
+        rgba(139, 105, 20, 0.2) 100%
+    );
+}
+
+/* Chat Input for Local Cocoa */
+.skin-local-cocoa .cocoa-chat-input {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border-color: var(--cocoa-medium);
+}
+
+.skin-local-cocoa.dark .cocoa-chat-input {
+    background: rgba(42, 31, 20, 0.8);
+    border-color: rgba(201, 168, 124, 0.3);
+}
+
+.skin-local-cocoa .cocoa-chat-input:focus {
+    border-color: var(--cocoa-warm);
+    box-shadow: 0 0 0 2px rgba(184, 149, 111, 0.2);
+}
+
+/* Send Button for Local Cocoa */
+.skin-local-cocoa .cocoa-send-btn {
+    background: linear-gradient(135deg, var(--cocoa-warm) 0%, var(--cocoa-brown) 100%);
+    color: white;
+}
+
+.skin-local-cocoa .cocoa-send-btn:hover {
+    background: linear-gradient(135deg, var(--cocoa-brown) 0%, var(--cocoa-dark) 100%);
+}
+
+/* Primary button styling for Local Cocoa */
+.skin-local-cocoa .cocoa-primary-btn {
+    background: linear-gradient(135deg, var(--cocoa-warm) 0%, var(--cocoa-brown) 100%);
+    border: none;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.skin-local-cocoa .cocoa-primary-btn:hover {
+    background: linear-gradient(135deg, var(--cocoa-medium) 0%, var(--cocoa-warm) 100%);
+}
+
+/* Navigation items in sidebar */
+.skin-local-cocoa .cocoa-nav-item {
+    color: var(--cocoa-sidebar-text);
+    transition: all 0.2s ease;
+}
+
+.skin-local-cocoa .cocoa-nav-item:hover {
+    background: rgba(232, 212, 188, 0.1);
+}
+
+.skin-local-cocoa .cocoa-nav-item.active {
+    background: rgba(232, 212, 188, 0.15);
+    color: var(--cocoa-cream);
+}
+
+/* Typography adjustments */
+.skin-local-cocoa .cocoa-heading {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+}
+
+/* Decorative leaf/branch elements */
+.skin-local-cocoa .cocoa-decor-left,
+.skin-local-cocoa .cocoa-decor-right {
+    position: absolute;
+    pointer-events: none;
+    z-index: 0;
+    top: 0;
+    bottom: 120px; /* Stop above the input area */
+    opacity: 0.20;
+}
+
+.skin-local-cocoa .cocoa-decor-left {
+    left: 0;
+}
+
+.skin-local-cocoa .cocoa-decor-right {
+    right: 0;
+}
+
+.skin-local-cocoa .cocoa-decor-left img,
+.skin-local-cocoa .cocoa-decor-right img {
+    height: 100%;
+    width: auto;
+    object-fit: contain;
+}
+
+.skin-local-cocoa .cocoa-decor-left img {
+    object-position: left top;
+}
+
+.skin-local-cocoa .cocoa-decor-right img {
+    object-position: right top;
+}
+
+/* Adjust opacity for dark mode */
+.skin-local-cocoa.dark .cocoa-decor-left,
+.skin-local-cocoa.dark .cocoa-decor-right {
+    opacity: 0.20;
+}
+
+/* Gentle bounce animation for navigation buttons */
+@keyframes bounce-gentle {
+    0%, 100% {
+        transform: translateY(-50%) translateX(0);
+    }
+    50% {
+        transform: translateY(-50%) translateX(4px);
+    }
+}
+
+.animate-bounce-gentle {
+    animation: bounce-gentle 1.5s ease-in-out infinite;
+}
+
+/* ============================================
+   Markdown Content Styling
+   ============================================ */
+
+.markdown-content {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.markdown-content p {
+    margin-bottom: 0.75em;
+}
+
+.markdown-content p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-content strong {
+    font-weight: 600;
+}
+
+.markdown-content em {
+    font-style: italic;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    font-weight: 600;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+
+.markdown-content h1 {
+    font-size: 1.5em;
+}
+
+.markdown-content h2 {
+    font-size: 1.25em;
+}
+
+.markdown-content h3 {
+    font-size: 1.125em;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.markdown-content hr {
+    margin: 1em 0;
+    border-color: hsl(var(--border));
+}
+
+/* Cocoa skin markdown styling */
+.skin-local-cocoa .markdown-content strong {
+    color: #5c4a2a;
+}
+
+.skin-local-cocoa .markdown-content h1,
+.skin-local-cocoa .markdown-content h2,
+.skin-local-cocoa .markdown-content h3,
+.skin-local-cocoa .markdown-content h4 {
+    color: #5c4a2a;
+}
+
+.skin-local-cocoa.dark .markdown-content strong {
+    color: #e8d4bc;
+}
+
+.skin-local-cocoa.dark .markdown-content h1,
+.skin-local-cocoa.dark .markdown-content h2,
+.skin-local-cocoa.dark .markdown-content h3,
+.skin-local-cocoa.dark .markdown-content h4 {
+    color: #e8d4bc;
+}
+
+/* ============================================
+   Welcome Setup Animations
+   ============================================ */
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+@keyframes pulse-warm {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 12px rgba(251, 146, 60, 0);
+    }
+}
+
+@keyframes shimmer-warm {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-warm {
+    animation: pulse-warm 2s ease-in-out infinite;
+}
+
+.animate-shimmer-warm {
+    background: linear-gradient(
+        90deg,
+        rgba(251, 146, 60, 0.1) 0%,
+        rgba(251, 146, 60, 0.3) 50%,
+        rgba(251, 146, 60, 0.1) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-warm 2s ease-in-out infinite;
+}
+
+/* Welcome setup gradient text */
+.welcome-gradient-text {
+    background: linear-gradient(135deg, #b45309 0%, #ea580c 50%, #d97706 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.dark .welcome-gradient-text {
+    background: linear-gradient(135deg, #fbbf24 0%, #fb923c 50%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Welcome card hover effects */
+.welcome-card {
+    transition: all 0.2s ease;
+}
+
+.welcome-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.05);
+}
+
+/* Download button glow effect */
+.download-btn-glow {
+    position: relative;
+}
+
+.download-btn-glow::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: linear-gradient(135deg, #f59e0b, #ea580c, #f59e0b);
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.download-btn-glow:hover::before {
+    opacity: 0.5;
+    filter: blur(8px);
+}
