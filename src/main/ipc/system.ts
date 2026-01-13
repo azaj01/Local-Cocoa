@@ -81,6 +81,18 @@ export function registerSystemHandlers(windowManager: WindowManager) {
         if (!url || typeof url !== 'string') {
             throw new Error('Missing url.');
         }
+        const ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
+        try {
+            const parsed = new URL(url);
+            if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+                throw new Error(`Blocked: unsafe protocol "${parsed.protocol}". Only ${ALLOWED_PROTOCOLS.join(', ')} allowed.`);
+            }
+        } catch (e) {
+            if (e instanceof Error && e.message.startsWith('Blocked:')) {
+                throw e;
+            }
+            throw new Error('Invalid URL format.');
+        }
         await shell.openExternal(url);
         return true;
     });
