@@ -92,6 +92,10 @@
                 "to": "local_rag_dist"
             },
             {
+                "from": "services/mcp_server",
+                "to": "mcp_server"
+            },
+            {
                 "from": "scripts/linux/start-lite-server-tiny.sh",
                 "to": "scripts/start-lite-server-tiny.sh"
             },

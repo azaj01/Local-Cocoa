@@ -31,6 +31,7 @@ import { registerActivityHandlers } from './ipc/activity';
 import { registerModelHandlers } from './ipc/models';
 import { registerSystemHandlers } from './ipc/system';
 import { registerScanHandlers } from './ipc/scan';
+import { registerMCPHandlers, initMCPServer } from './ipc/mcp';
 import { ModelDownloadEvent } from './types';
 
 process.on('uncaughtException', (error) => {
@@ -211,3 +212,7 @@ registerActivityHandlers();
 registerModelHandlers(modelManager, serviceManager);
 registerSystemHandlers(windowManager);
 registerScanHandlers();
+registerMCPHandlers();
+
+// Initialize MCP server (for Claude Desktop integration)
+initMCPServer();

@@ -99,6 +99,22 @@ declare global {
             addChatMessage: (sessionId: string, message: Partial<ConversationMessage>) => Promise<ConversationMessage>;
             exportLogs: () => Promise<{ exported: boolean; path: string | null; error?: string }>;
             getLogsPath: () => Promise<string>;
+
+            // MCP (Model Context Protocol) APIs
+            mcpGetClaudeConfig: () => Promise<object>;
+            mcpGetClaudeConfigPath: () => Promise<string>;
+            mcpCheckClaudeConfig: () => Promise<boolean>;
+            mcpInstallToClaude: () => Promise<{ success: boolean; path?: string; error?: string }>;
+            mcpUninstallFromClaude: () => Promise<{ success: boolean; error?: string }>;
+            mcpIsInstalled: () => Promise<boolean>;
+            mcpOpenClaudeConfig: () => Promise<boolean>;
+            mcpGetStatus: () => Promise<{
+                initialized: boolean;
+                running: boolean;
+                pythonPath: string | null;
+                serverPath: string | null;
+            }>;
+            mcpCopyConfig: () => Promise<string>;
         };
     }
 }
