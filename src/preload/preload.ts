@@ -321,6 +321,50 @@ const api = {
     cancelScan: (): void => {
         ipcRenderer.send('scan:cancel');
     },
+
+    // ========================================
+    // MCP (Model Context Protocol) APIs
+    // ========================================
+
+    // Get Claude Desktop config for Local Cocoa MCP
+    mcpGetClaudeConfig: (): Promise<object> =>
+        ipcRenderer.invoke('mcp:get-claude-config'),
+
+    // Get Claude Desktop config file path
+    mcpGetClaudeConfigPath: (): Promise<string> =>
+        ipcRenderer.invoke('mcp:get-claude-config-path'),
+
+    // Check if Claude Desktop config exists
+    mcpCheckClaudeConfig: (): Promise<boolean> =>
+        ipcRenderer.invoke('mcp:check-claude-config'),
+
+    // Install MCP config to Claude Desktop
+    mcpInstallToClaude: (): Promise<{ success: boolean; path?: string; error?: string }> =>
+        ipcRenderer.invoke('mcp:install-to-claude'),
+
+    // Remove MCP config from Claude Desktop
+    mcpUninstallFromClaude: (): Promise<{ success: boolean; error?: string }> =>
+        ipcRenderer.invoke('mcp:uninstall-from-claude'),
+
+    // Check if MCP is installed in Claude Desktop
+    mcpIsInstalled: (): Promise<boolean> =>
+        ipcRenderer.invoke('mcp:is-installed'),
+
+    // Open Claude Desktop config file in editor
+    mcpOpenClaudeConfig: (): Promise<boolean> =>
+        ipcRenderer.invoke('mcp:open-claude-config'),
+
+    // Get MCP server status
+    mcpGetStatus: (): Promise<{
+        initialized: boolean;
+        running: boolean;
+        pythonPath: string | null;
+        serverPath: string | null;
+    }> => ipcRenderer.invoke('mcp:get-status'),
+
+    // Copy config to clipboard (returns JSON string)
+    mcpCopyConfig: (): Promise<string> =>
+        ipcRenderer.invoke('mcp:copy-config'),
 };
 
 contextBridge.exposeInMainWorld('api', api);
