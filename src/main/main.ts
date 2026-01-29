@@ -17,14 +17,13 @@ if (process.platform === 'darwin') {
 // Load environment variables first before loading other modules (works in both dev and prod)
 loadEnvConfig();
 
-import './logger'; // Initialize logger
 import { initializeRuntime } from './runtimeMigration';
 import { WindowManager } from './windowManager';
 import { ModelManager } from './modelManager';
 import { PythonServer } from './pythonServer';
 import { ensureBackendSpawnsReady } from './backendClient';
 import { TrayManager } from './trayManager';
-import { setDebugMode, createDebugLogger } from './debug';
+import { updateLogSettings } from './logger';
 import { registerFileHandlers } from './ipc/files';
 import { registerEmailHandlers } from './ipc/email';
 import { registerNotesHandlers } from './ipc/notes';
@@ -71,12 +70,8 @@ async function startServices() {
     await modelManager.initializePromise;
     const modelConfig = await modelManager.getConfig();
 
-    // Initialize debug mode from config
-    setDebugMode(modelConfig.debugMode ?? false);
-
-    const debugLog = createDebugLogger('Main');
-    debugLog('startServices() called');
-    debugLog(`app.isPackaged: ${app.isPackaged}, isDev: ${config.isDev}, debugMode: ${config.debugMode}`);
+    console.log('startServices() called');
+    console.log(`app.isPackaged: ${app.isPackaged}, isDev: ${config.isDev}, env: ${process.env.NODE_ENV}`);
 
     // We pass the models.config.json path so Python can resolve model relative paths
     const modelsConfigPath = path.join(config.paths.projectRoot, 'config', 'models.config.json');
@@ -89,7 +84,15 @@ async function startServices() {
         LOCAL_ACTIVE_EMBEDDING_MODEL_ID: modelConfig.activeEmbeddingModelId,
         LOCAL_ACTIVE_RERANKER_MODEL_ID: modelConfig.activeRerankerModelId,
         LOCAL_ACTIVE_AUDIO_MODEL_ID: modelConfig.activeAudioModelId,
-        LOCAL_SERVICE_LOG_TO_FILE: config.backend.logToFile ?? 'false'
+        LOCAL_SERVICE_LOG_TO_FILE: config.backend.logToFile ?? 'false',
+        LOCAL_SERVICE_BIN_PATH: config.paths.backendRoot,
+        // Below variables are only effective in local-cocoa-service's dev build for debugpy support
+        DEBUG: process.env.DEBUG ?? 'false',
+        PYTHONUNBUFFERED: process.env.PYTHONUNBUFFERED ?? '0',
+        PYDEVD_DISABLE_FILE_VALIDATION: process.env.PYDEVD_DISABLE_FILE_VALIDATION ?? '0',
+        DEBUGPY_PYTHON_PATH: process.env.DEBUGPY_PYTHON_PATH ?? '',
+        LOCAL_SERVICE_DEBUG_WAIT: process.env.LOCAL_SERVICE_DEBUG_WAIT ?? 'false',
+        LOCAL_SERVICE_DEBUG_PORT: process.env.LOCAL_SERVICE_DEBUG_PORT ?? ''
     });
 
     try {
@@ -103,6 +106,9 @@ async function startServices() {
 }
 
 app.whenReady().then(async () => {
+    // Initialize log level from config
+    updateLogSettings();
+
     if (process.platform === 'darwin' && app.dock) {
         const iconPath = path.join(config.paths.projectRoot, 'assets', 'icon.png');
         app.dock.setIcon(nativeImage.createFromPath(iconPath));

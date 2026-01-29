@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { ModelManager } from '../modelManager';
 import { updateSettings } from '../backendClient';
-import { setDebugMode } from '../debug';
+import { updateLogSettings } from '../logger';
 
 export function registerModelHandlers(modelManager: ModelManager) {
     ipcMain.handle('models:status', async () => modelManager.getStatus());
@@ -75,7 +75,8 @@ export function registerModelHandlers(modelManager: ModelManager) {
 
         // Update debug mode if changed (takes effect immediately for new logs)
         if (oldConfig.debugMode !== newConfig.debugMode) {
-            setDebugMode(newConfig.debugMode ?? false);
+            config.logLevel = newConfig.debugMode ? 'debug' : 'info';
+            updateLogSettings();
         }
 
         return newConfig;

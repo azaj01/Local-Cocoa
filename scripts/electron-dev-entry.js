@@ -1,7 +1,5 @@
 const path = require('path');
 const { app } = require('electron');
-const dotenv = require('dotenv');
-const dotenvExpand = require('dotenv-expand');
 
 const rootDir = path.resolve(__dirname, '..');
 

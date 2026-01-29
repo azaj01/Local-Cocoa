@@ -67,7 +67,6 @@ pretrained/
 redis-server/
 mongodb/
 milvus/
-services/local_rag_dist/
 
 # Misc
 npm-debug.log*
@@ -93,10 +92,11 @@ package-lock.json~
 
 # Local environment directories
 log/
-
-backend/
-!plugins/*/backend/
-!plugins/*/backend/**
+release/
+dist-backend/
+local/
+profiling/
+plugins/*/backend/
 
 # Benchmark results (keep runner code)
 benchmark/results/
@@ -112,15 +112,12 @@ storage/
 
 .github/
 
-release/
-
 # Reference and Test Scripts
 package-lock.json
 
-!services/storage/
-.env
-.env.benchmark
-.vscode/
+# Ignore local and production env settings.
+.env.local
+.env.prod
 
 # Dev mode session key (auto-generated)
 .dev-session-key
@@ -138,4 +135,3 @@ assets/certs/
 *.p12
 *.pfx
 
-profiling/

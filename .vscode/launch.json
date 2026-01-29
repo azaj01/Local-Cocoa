@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
       {
-          "name": "Debug Electron (with python)",
+          "name": "Debug(with backend)",
           "type": "node",
           "request": "launch",
           "cwd": "${workspaceFolder}",
@@ -12,7 +12,13 @@
               "dev:electron"
           ],
           "env": { // Overwite env variables
-              "LOCAL_SERVICE_LAUNCH_PYTHON_SERVER": "true"
+              "LOCAL_SERVICE_LAUNCH_PYTHON_SERVER": "true",
+              "DEBUG": "true",
+              "PYTHONUNBUFFERED": "1",
+              "PYDEVD_DISABLE_FILE_VALIDATION": "1",
+              "DEBUGPY_PYTHON_PATH": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+              "LOCAL_SERVICE_DEBUG_WAIT": "true",
+              "LOCAL_SERVICE_DEBUG_PORT": "5678"
           },
           "console": "integratedTerminal",
           "autoAttachChildProcesses": true,
@@ -22,7 +28,7 @@
           ]
       },
       {
-          "name": "Debug Electron (NO python)",
+          "name": "Debug(NO backend)",
           "type": "node",
           "request": "launch",
           "cwd": "${workspaceFolder}",

@@ -187,7 +187,7 @@ export function registerSystemHandlers(windowManager: WindowManager) {
             }
         }
         
-        const userDataLogFiles = ['main.log', 'renderer.log'];
+        const userDataLogFiles = ['electron-main.log', 'renderer.log'];
         for (const logFile of userDataLogFiles) {
             const logPath = path.join(path.dirname(config.paths.electronLogPath), logFile);
             if (fs.existsSync(logPath)) {

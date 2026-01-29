@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { config } from './config';
-import { createDebugLogger } from './debug';
 
 /**
  * MCP Server Manager
@@ -25,8 +24,6 @@ export class MCPServer {
      * Find Python executable
      */
     private findPython(): string {
-        const debugLog = createDebugLogger('MCPServer');
-
         // Check for virtual environment in project
         const venvPaths = [
             path.join(config.paths.projectRoot, '.venv', 'bin', 'python'),
@@ -37,7 +34,7 @@ export class MCPServer {
 
         for (const venvPath of venvPaths) {
             if (fs.existsSync(venvPath)) {
-                debugLog(`Found Python in venv: ${venvPath}`);
+                console.log(`Found Python in venv: ${venvPath}`);
                 return venvPath;
             }
         }
@@ -82,23 +79,21 @@ export class MCPServer {
      * Start the MCP server
      */
     async start(): Promise<void> {
-        const debugLog = createDebugLogger('MCPServer');
-
         if (this.process) {
-            debugLog('MCP server already running');
+            console.log('MCP server already running');
             return;
         }
 
         // In dev mode, MCP server is typically started separately or on-demand
         if (config.isDev) {
-            debugLog('Dev mode: MCP server available for manual start');
+            console.log('Dev mode: MCP server available for manual start');
             return;
         }
 
         try {
             this.pythonPath = this.findPython();
-            debugLog(`Using Python: ${this.pythonPath}`);
-            debugLog(`MCP server path: ${this.serverPath}`);
+            console.log(`Using Python: ${this.pythonPath}`);
+            console.log(`MCP server path: ${this.serverPath}`);
 
             // Read API key - try dev session key first, then legacy paths
             let apiKey = '';
@@ -107,7 +102,7 @@ export class MCPServer {
             if (fs.existsSync(devSessionKeyPath)) {
                 try {
                     apiKey = fs.readFileSync(devSessionKeyPath, 'utf-8').trim();
-                    debugLog(`Using dev session key from: ${devSessionKeyPath}`);
+                    console.log(`Using dev session key from: ${devSessionKeyPath}`);
                 } catch {
                     // Ignore read errors
                 }
@@ -128,29 +123,29 @@ export class MCPServer {
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
 
-            debugLog(`MCP server started with PID: ${this.process.pid}`);
+            console.log(`MCP server started with PID: ${this.process.pid}`);
 
             this.process.stdout?.on('data', (data) => {
-                debugLog(`stdout: ${data.toString().trim()}`);
+                console.debug(`stdout: ${data.toString().trim()}`);
             });
 
             this.process.stderr?.on('data', (data) => {
-                debugLog(`stderr: ${data.toString().trim()}`);
+                console.error(`stderr: ${data.toString().trim()}`);
             });
 
             this.process.on('error', (err) => {
-                debugLog(`Error: ${err.message}`);
+                console.error(`Error: ${err.message}`);
                 this.process = null;
             });
 
             this.process.on('close', (code) => {
                 if (code !== 0) {
-                    debugLog(`Exited with code ${code}`);
+                    console.error(`Exited with code ${code}`);
                 }
                 this.process = null;
             });
         } catch (error: any) {
-            debugLog(`Failed to start MCP server: ${error.message}`);
+            console.error(`Failed to start MCP server: ${error.message}`);
             throw error;
         }
     }
@@ -159,10 +154,8 @@ export class MCPServer {
      * Stop the MCP server
      */
     stop(): void {
-        const debugLog = createDebugLogger('MCPServer');
-
         if (this.process) {
-            debugLog('Stopping MCP server...');
+            console.log('Stopping MCP server...');
             if (process.platform === 'win32') {
                 try {
                     execSync(`taskkill /pid ${this.process.pid} /T /F`, { stdio: 'ignore' });

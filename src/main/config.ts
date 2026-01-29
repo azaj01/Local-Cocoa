@@ -4,10 +4,13 @@ import dotenv from 'dotenv';
 import dotenvExpand from 'dotenv-expand';
 import pkgJson from '../../package.json';
 
-const isDev = !app.isPackaged && process.env.NODE_ENV !== 'prod';
+const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'prod';
+
+// For DEV mode, use project root
+// For PROD mode, it means app.asar file
 const projectRoot = path.resolve(__dirname, '../..');
 
-// Rumtime Root directory, all dynamic data and files are stored here
+// Runtime Root directory, all dynamic data and files are stored here
 // In dev mode, for easy access 
 //    <project root>/runtime/
 // In production, use Electron's userData path
@@ -15,14 +18,14 @@ const projectRoot = path.resolve(__dirname, '../..');
 //    Win:  c:/Users/<user name>/AppData/Roaming/Local Cocoa/
 const runtimeRoot = isDev ? path.join(projectRoot, 'runtime') : app.getPath('userData');
 
-// Resource root directory, all static (read-only) data files are stored here. These files are created in compile phase and installed here
+// Resource root directory, all static (read-only) data files are stored here.
 const resourceRoot = isDev ? projectRoot : process.resourcesPath;
 
 const pkg = pkgJson as { name?: string; version?: string };
 process.env.APP_NAME = pkg.name ?? '';
 process.env.APP_VERSION = pkg.version ?? '';
 
-const backendResourceRoot = isDev ? runtimeRoot : resourceRoot;
+const backendRoot = isDev ? 'dist-backend' : resourceRoot;
 
 /**
  * Load environment variables based on the current mode
@@ -31,19 +34,30 @@ const backendResourceRoot = isDev ? runtimeRoot : resourceRoot;
 export function loadEnvConfig() {
     // Determine mode and config directory
     const mode = isDev ? 'dev' : 'prod';
-
     const configDir = path.join(projectRoot, 'config');
 
-    console.log(`[Env] Loading environment for mode: ${mode}`);
-    console.log(`[Env] Config directory: ${configDir}`);
+    console.log(`[Env] Loading environment for mode: ${mode} (isPackaged: ${app.isPackaged}, NODE_ENV: ${process.env.NODE_ENV})`);
 
-    // Load .env configuration
-    dotenvExpand.expand(dotenv.config({ path: path.join(configDir, `.env`) }));
-    dotenvExpand.expand(dotenv.config({ path: path.join(configDir, `.env.${mode}`) }));
+    // First read .env as base value set
+    const baseEnv = dotenv.config({path: path.join(configDir, '.env')}).parsed || {};
+    dotenvExpand.expand({ parsed: baseEnv });
+
+    // Then read .env.mode as override value set
+    const modeEnv = dotenv.config({path: path.join(configDir, `.env.${mode}`)}).parsed || {};
+    dotenvExpand.expand({ parsed: modeEnv });
+
+    // Next, merge all value sets with proirity order: prodEnv -> baseEnv -> process.env
+    const finalEnv = {
+        ...baseEnv,    // lowest priority: .env
+        ...modeEnv,    // middle priority: .env.mode
+        ...process.env // highest priority: system original value override all
+    };
+
+    // Last, merge all value sets with proirity order: prodEnv -> baseEnv -> process.env
+    Object.assign(process.env, finalEnv);
 }
 
 export const config = {
-    isDev,
     get devServerUrl() { return process.env.VITE_DEV_SERVER_URL ?? ''; },
     get ports() {
         return {
@@ -60,18 +74,21 @@ export const config = {
             backend: process.env.LOCAL_RAG_API_URL,
         };
     },
-    paths: {
-        projectRoot,
-        resourceRoot,
-        runtimeRoot,
-        backendResourceRoot,
-        modelRoot: path.join(runtimeRoot, 'local-cocoa-models', 'pretrained'),
-        electronLogPath: process.env.LOCAL_ELECTRON_LOG_PATH ? path.join(runtimeRoot, process.env.LOCAL_ELECTRON_LOG_PATH) : '',
-        llamaServer: path.join(backendResourceRoot, 'llama-cpp', 'bin', `llama-server${process.platform === 'win32' ? '.exe' : ''}`),
-        whisperServer: path.join(backendResourceRoot, 'whisper-cpp', 'bin', `whisper-server${process.platform === 'win32' ? '.exe' : ''}`),
-        // Always use compiled preload.js (ts-node in preload context causes issues)
-        preload: path.join(projectRoot, 'dist-electron', 'preload', 'preload.js'),
-        dist: path.join(__dirname, 'dist-electron', 'renderer'),
+    get paths() {
+        return {
+            projectRoot,
+            resourceRoot,
+            runtimeRoot,
+            backendRoot,
+            modelRoot: path.join(runtimeRoot, 'local-cocoa-models', 'pretrained'),
+            electronLogPath: process.env.LOCAL_ELECTRON_LOG_PATH ? path.join(runtimeRoot, process.env.LOCAL_ELECTRON_LOG_PATH) : '',
+            localCocoaServer: path.join(backendRoot, 'local-cocoa-server', `local-cocoa-server${process.platform === 'win32' ? '.exe' : ''}`),
+            llamaServer: path.join(backendRoot, 'llama-cpp', 'bin', `llama-server${process.platform === 'win32' ? '.exe' : ''}`),
+            whisperServer: path.join(backendRoot, 'whisper-cpp', 'bin', `whisper-server${process.platform === 'win32' ? '.exe' : ''}`),
+            // Always use compiled preload.js (ts-node in preload context causes issues)
+            preload: path.join(projectRoot, 'dist-electron', 'preload', 'preload.js'),
+            rendererDist: path.join(projectRoot, 'dist-electron', 'renderer'),
+        };
     },
     windows: {
         main: {
@@ -94,10 +111,12 @@ export const config = {
         name: pkg.name,
         version: pkg.version
     },
-    // additional config for engineering
+    // engineering config
+    isDev,
     get debugMode() {
         return process.env.DEBUG?.toLowerCase() === 'true';
     },
+    get logLevel() { return process.env.LOCAL_LOG_LEVEL ?? 'info'; },
     get backend() {
         return {
             launchPythonServer: process.env.LOCAL_SERVICE_LAUNCH_PYTHON_SERVER?.toLowerCase() === 'true',

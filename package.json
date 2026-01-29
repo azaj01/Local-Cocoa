@@ -9,8 +9,6 @@
         "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
         "dev:renderer": "vite --mode dev",
         "dev:electron": "cross-env NODE_ENV=dev electron --trace-deprecation scripts/electron-dev-entry.js",
-        "models:download": "node scripts/download_tiny_models.js",
-        "services:lite": "node scripts/start-lite-server.js",
         "build": "npm run build:renderer && npm run build:electron",
         "build:renderer": "vite build",
         "build:electron": "tsc -p src/main/tsconfig.json",
@@ -19,10 +17,9 @@
         "lint:fix": "eslint . --ext .ts,.tsx --fix",
         "prepare": "husky",
         "preview": "npm run build && electron dist-electron/main/main.js",
-        "dist": "bash runtime/local_rag_dist/run.sh",
-        "dist:dmg": "npm run build && electron-builder --mac dmg",
+        "dist:dmg": "cross-env NODE_ENV=production npm run build && electron-builder --mac dmg",
         "dist:dmg-debug": "npm run build && electron-builder --mac dmg -c.mac.identity=null",
-        "dist:exe": "npm run build && electron-builder --win nsis"
+        "dist:exe": "cross-env NODE_ENV=production npm run build && electron-builder --win nsis"
     },
     "lint-staged": {
         "*.{ts,tsx}": [
@@ -63,7 +60,6 @@
         "autoprefixer": "^10.4.23",
         "concurrently": "^9.2.1",
         "cross-env": "^10.1.0",
-        "dotenv-expand": "^12.0.3",
         "electron": "^40.0.0",
         "electron-builder": "^26.5.0",
         "eslint": "^9.39.2",

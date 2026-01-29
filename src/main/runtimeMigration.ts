@@ -25,10 +25,7 @@ interface ValidationResult {
 
 // Expected binary directories (must exist in runtime for app to function)
 const REQUIRED_BINARY_DIRS = [
-    'llama-cpp',
     'local-cocoa-models',
-    'local-cocoa-server',
-    'whisper-cpp',
     'mail',
     'notes',
     'qdrant-data',
@@ -110,18 +107,18 @@ export function validateRuntime(): ValidationResult {
 
     // Validate llama-cpp has the server binary
     if (config.backend.launchPythonServer) {
-        const llamaServerPath = config.paths.llamaServer;
-        if (!fs.existsSync(llamaServerPath)) {
-            result.issues.push(`Missing llama-server binary at: ${llamaServerPath}`);
-            result.valid = false;
-        }
+        const checkFiles = [
+            { path: config.paths.localCocoaServer, name: 'local cocoa server' },
+            { path: config.paths.llamaServer, name: 'llama-server' },
+            { path: config.paths.whisperServer, name: 'whisper-server' }
+        ];
 
-        // Validate whisper-cpp has the server binary
-        const whisperServerPath = config.paths.whisperServer;
-        if (!fs.existsSync(whisperServerPath)) {
-            result.issues.push(`Missing whisper-server binary at: ${whisperServerPath}`);
-            result.valid = false;
-        }
+        checkFiles.forEach(item => {
+            if (!fs.existsSync(item.path)) {
+                result.issues.push(`Missing ${item.name} binary at: ${item.path}`);
+                result.valid = false;
+            }
+        });
     }
 
     // Validate models directory has at least some models

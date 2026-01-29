@@ -101,7 +101,7 @@ export class WindowManager {
         if (config.isDev) {
             await this.mainWindow.loadURL(config.devServerUrl);
         } else {
-            await this.mainWindow.loadFile(path.join(config.paths.dist, 'index.html'));
+            await this.mainWindow.loadFile(path.join(config.paths.rendererDist, 'index.html'));
         }
 
         if (config.debugMode) {
@@ -156,7 +156,7 @@ export class WindowManager {
                 spotlightURL.searchParams.set('view', 'spotlight');
                 await this.spotlightWindow.loadURL(spotlightURL.toString());
             } else {
-                await this.spotlightWindow.loadFile(path.join(config.paths.dist, 'index.html'), {
+                await this.spotlightWindow.loadFile(path.join(config.paths.rendererDist, 'index.html'), {
                     query: { view: 'spotlight' }
                 });
             }
@@ -262,7 +262,7 @@ export class WindowManager {
                 quickNoteURL.searchParams.set('view', 'quicknote');
                 await this.quickNoteWindow.loadURL(quickNoteURL.toString());
             } else {
-                await this.quickNoteWindow.loadFile(path.join(config.paths.dist, 'index.html'), {
+                await this.quickNoteWindow.loadFile(path.join(config.paths.rendererDist, 'index.html'), {
                     query: { view: 'quicknote' }
                 });
             }
@@ -360,7 +360,7 @@ export class WindowManager {
         }
 
         const { width, height } = { width: 400, height: 200 };
-        // Position bottom-right
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const primaryDisplay = require('electron').screen.getPrimaryDisplay();
         const { workArea } = primaryDisplay;
         const x = workArea.x + workArea.width - width - 20;
@@ -394,8 +394,7 @@ export class WindowManager {
             await this.mcpActivityWindow.loadURL(`${config.devServerUrl}/#mcp-activity`);
         } else {
             // Fallback for packaged app or if devServerUrl is missing (though it shouldn't be in dev)
-            const filePath = path.join(__dirname, '../renderer/index.html');
-            await this.mcpActivityWindow.loadFile(filePath, { hash: 'mcp-activity' });
+            await this.mcpActivityWindow.loadFile(path.join(config.paths.rendererDist, 'index.html'), { hash: 'mcp-activity' });
         }
 
         return this.mcpActivityWindow;

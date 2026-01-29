@@ -1,2 +1,0 @@
-"""Email Manager Plugin - Backend"""
-
