@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle2, Circle, FileText, Search, Brain, Database } from 'lucide-react';
 import { cn } from '../lib/utils';
-import type { AgentStep, AgentStepFile } from '../types';
+import type { AgentStep, AgentStepFile, SearchHit } from '../types';
+import { RecalledContext } from './ReferenceContext';
 
 interface AgentProcessProps {
     steps: AgentStep[];
@@ -9,9 +10,19 @@ interface AgentProcessProps {
     className?: string;
     onFileClick?: (file: AgentStepFile) => void;
     autoHide?: boolean;
+    recalledReferences?: SearchHit[];
+    onReferenceOpen?: (reference: SearchHit) => void;
 }
 
-export function AgentProcess({ steps, isComplete = true, className, onFileClick, autoHide = false }: AgentProcessProps) {
+export function AgentProcess({
+    steps,
+    isComplete = true,
+    className,
+    onFileClick,
+    autoHide = false,
+    recalledReferences,
+    onReferenceOpen
+}: AgentProcessProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
     useEffect(() => {
@@ -32,6 +43,26 @@ export function AgentProcess({ steps, isComplete = true, className, onFileClick,
     const summaryText = isComplete
         ? `${totalFiles} chunks retrieved via vector strategy`
         : (lastStep?.title || 'Processing...');
+
+    const recalledTargetIndex = (() => {
+        if (!recalledReferences || recalledReferences.length === 0) return -1;
+        const isRetrievalStep = (step: AgentStep) => {
+            const haystack = `${step.id} ${step.title} ${step.detail ?? ''}`.toLowerCase();
+            return (
+                haystack.includes('search') ||
+                haystack.includes('retrieve') ||
+                haystack.includes('retrieval') ||
+                haystack.includes('keyword') ||
+                haystack.includes('vector') ||
+                haystack.includes('lexical') ||
+                haystack.includes('rerank')
+            );
+        };
+        for (let i = steps.length - 1; i >= 0; i -= 1) {
+            if (isRetrievalStep(steps[i])) return i;
+        }
+        return steps.length - 1;
+    })();
 
     return (
         <div className={cn("rounded-lg border bg-card overflow-hidden mb-4 transition-all duration-300 ease-in-out", className)}>
@@ -135,6 +166,15 @@ export function AgentProcess({ steps, isComplete = true, className, onFileClick,
                                                         + {step.files.length - 5} more files
                                                     </div>
                                                 )}
+                                            </div>
+                                        )}
+                                        {recalledReferences && recalledReferences.length > 0 && index === recalledTargetIndex && (
+                                            <div className="mt-3">
+                                                <RecalledContext
+                                                    references={recalledReferences}
+                                                    onPreview={(ref) => onReferenceOpen?.(ref)}
+                                                    isComplete={true}
+                                                />
                                             </div>
                                         )}
                                     </div>

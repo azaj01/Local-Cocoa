@@ -330,12 +330,12 @@ function EmbeddedHitsPanel({ hits, subQuery, onHitClick }: {
 
             {/* Relevant Hits list - always visible */}
             <div className="p-2 space-y-1.5 max-h-[300px] overflow-y-auto">
-                {sortedRelevantHits.map((hit) => {
+                {sortedRelevantHits.map((hit, hitIndex) => {
                     const hitKey = hit.chunkId || hit.fileId || '';
                     const originalIdx = hits.indexOf(hit);
                     return (
                         <EmbeddedHitItem
-                            key={hitKey}
+                            key={`${hitKey || 'hit'}-${originalIdx}-${hitIndex}`}
                             hit={hit}
                             index={originalIdx}
                             isExpanded={expandedIndex === originalIdx}
@@ -362,12 +362,12 @@ function EmbeddedHitsPanel({ hits, subQuery, onHitClick }: {
 
                         {showNotRelevant && (
                             <div className="mt-1.5 space-y-1.5 animate-in slide-in-from-top-1 duration-150">
-                                {notRelevantHits.map((hit) => {
+                                {notRelevantHits.map((hit, hitIndex) => {
                                     const hitKey = hit.chunkId || hit.fileId || '';
                                     const originalIdx = hits.indexOf(hit);
                                     return (
                                         <EmbeddedHitItem
-                                            key={hitKey}
+                                            key={`${hitKey || 'hit'}-${originalIdx}-${hitIndex}`}
                                             hit={hit}
                                             index={originalIdx}
                                             isExpanded={expandedIndex === originalIdx}
@@ -508,7 +508,7 @@ function RichMetadataPanel({
                                 </div>
                                 {v.extractedAnswer && (
                                     <p className="text-[10px] text-foreground mt-1 line-clamp-2">
-                                        "{v.extractedAnswer}"
+                                        &quot;{v.extractedAnswer}&quot;
                                     </p>
                                 )}
                             </button>
@@ -840,26 +840,27 @@ export function ThinkingProcess({
     const [isCollapsed, setIsCollapsed] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Auto-collapse when complete (with delay)
-    useEffect(() => {
-        if (isComplete && steps.length > 0) {
-            const timer = setTimeout(() => setIsCollapsed(true), 2000);
-            return () => clearTimeout(timer);
-        }
-    }, [isComplete, steps.length]);
-
-    if (!steps || steps.length === 0) return null;
-
-    // Calculate total time from last completed step
-    // Calculate total time from last completed step
-    const lastCompletedStep = [...steps].reverse().find(s => s.status === 'complete' && s.timestampMs);
-    const finalTimeMs = lastCompletedStep?.timestampMs ?? 0;
-
-    // Live timer state
+    // Live timer state - must be declared before any early returns
     const [elapsedMs, setElapsedMs] = useState<number>(0);
     const startTimeRef = useRef<number | null>(null);
 
+    // Calculate total time from last completed step
+    const lastCompletedStep = (steps ?? []).slice().reverse().find(s => s.status === 'complete' && s.timestampMs);
+    const finalTimeMs = lastCompletedStep?.timestampMs ?? 0;
+
+    // Auto-collapse when complete (with delay)
     useEffect(() => {
+        if (isComplete && steps && steps.length > 0) {
+            const timer = setTimeout(() => setIsCollapsed(true), 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [isComplete, steps]);
+
+    useEffect(() => {
+        if (!steps || steps.length === 0) {
+            return;
+        }
+
         if (isComplete) {
             setElapsedMs(finalTimeMs);
             startTimeRef.current = null;
@@ -872,7 +873,7 @@ export function ThinkingProcess({
             const lastStep = steps[steps.length - 1];
             const offset = lastStep.timestampMs || 0;
             startTimeRef.current = Date.now() - offset;
-        } 
+        }
         // If no steps yet, assume start is now
         else if (startTimeRef.current === null) {
             startTimeRef.current = Date.now();
@@ -886,6 +887,8 @@ export function ThinkingProcess({
 
         return () => clearInterval(timer);
     }, [isComplete, finalTimeMs, steps]);
+
+    if (!steps || steps.length === 0) return null;
 
     const displayTimeMs = isComplete ? finalTimeMs : Math.max(elapsedMs, finalTimeMs);
     const totalTimeStr = displayTimeMs > 0 ? `${(displayTimeMs / 1000).toFixed(1)}s` : null;
@@ -943,7 +946,7 @@ export function ThinkingProcess({
             )}>
                 {steps.map((step, idx) => (
                     <ThinkingStepNode
-                        key={step.id}
+                        key={`${step.id}-${idx}`}
                         step={step}
                         isLast={idx === steps.length - 1}
                         onHitClick={onHitClick}

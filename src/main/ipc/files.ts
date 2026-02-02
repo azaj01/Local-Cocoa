@@ -44,6 +44,28 @@ import {
 import { WindowManager } from '../windowManager';
 
 const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.ico'];
+const BENCHMARK_RESULTS_DIR_CANDIDATES = [
+    path.resolve(process.cwd(), 'benchmark', 'results'),
+    path.join(app.getAppPath(), 'benchmark', 'results'),
+];
+
+function getBenchmarkResultsDir(): string {
+    for (const candidate of BENCHMARK_RESULTS_DIR_CANDIDATES) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return BENCHMARK_RESULTS_DIR_CANDIDATES[0];
+}
+
+function resolveBenchmarkPath(relativePath: string): string {
+    const baseDir = getBenchmarkResultsDir();
+    const resolved = path.resolve(baseDir, relativePath);
+    if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
+        throw new Error('Access denied: path is outside benchmark results.');
+    }
+    return resolved;
+}
 
 async function isPathInIndexedFolders(targetPath: string): Promise<boolean> {
     try {
@@ -257,6 +279,48 @@ export function registerFileHandlers(windowManager: WindowManager) {
         }
 
         return result.filePaths;
+    });
+
+    ipcMain.handle('benchmark:list-result-folders', async () => {
+        const baseDir = getBenchmarkResultsDir();
+        if (!fs.existsSync(baseDir)) {
+            return [] as string[];
+        }
+        const entries = await fs.promises.readdir(baseDir, { withFileTypes: true });
+        return entries
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort()
+            .reverse();
+    });
+
+    ipcMain.handle('benchmark:list-result-files', async (_event, payload: { folder: string }) => {
+        if (!payload?.folder) {
+            throw new Error('Missing benchmark folder.');
+        }
+        const baseDir = getBenchmarkResultsDir();
+        if (!fs.existsSync(baseDir)) {
+            return [] as string[];
+        }
+        const folderPath = resolveBenchmarkPath(payload.folder);
+        const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+        return entries
+            .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json'))
+            .map((entry) => entry.name)
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    });
+
+    ipcMain.handle('benchmark:read-result-file', async (_event, payload: { folder: string; file: string }) => {
+        if (!payload?.folder || !payload?.file) {
+            throw new Error('Missing benchmark file selection.');
+        }
+        const folderPath = resolveBenchmarkPath(payload.folder);
+        const filePath = resolveBenchmarkPath(path.join(payload.folder, payload.file));
+        if (!filePath.startsWith(folderPath + path.sep)) {
+            throw new Error('Access denied: file is outside benchmark folder.');
+        }
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        return content;
     });
 
     ipcMain.handle('search:query', async (_event, payload: { query: string; limit?: number }) => {

@@ -98,6 +98,10 @@ declare global {
             setModelConfig: (config: any) => Promise<any>;
             addModel: (descriptor: any) => Promise<any>;
             pickFile: (options?: { filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
+            pickFiles?: (options?: { filters?: { name: string; extensions: string[] }[] }) => Promise<string[]>;
+            benchmarkListResultFolders?: () => Promise<string[]>;
+            benchmarkListResultFiles?: (folder: string) => Promise<string[]>;
+            benchmarkReadResultFile?: (folder: string, file: string) => Promise<string>;
             onModelDownloadEvent?: (callback: (event: ModelDownloadEvent) => void) => () => void;
             ingestScreenshot?: (image: Uint8Array) => Promise<ActivityLog>;
             getActivityTimeline?: (start?: string, end?: string, summary?: boolean) => Promise<ActivityTimelineResponse>;

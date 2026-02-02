@@ -19,7 +19,7 @@ type ModelAssetDescriptor = {
     mmprojId?: string;
 };
 
-export interface ModelConfig {
+interface ModelConfig {
     activeModelId: string;
     activeEmbeddingModelId: string;
     activeRerankerModelId: string;
@@ -36,6 +36,7 @@ export interface ModelConfig {
     embedBatchDelayMs?: number;
     visionBatchDelayMs?: number;
     debugMode?: boolean;
+    showBenchmarkViewer?: boolean;
 }
 
 
@@ -63,7 +64,8 @@ export class ModelManager extends EventEmitter {
         embedBatchSize: 10,
         embedBatchDelayMs: 10,
         visionBatchDelayMs: 200,
-        debugMode: config.debugMode
+        debugMode: config.debugMode,
+        showBenchmarkViewer: false,
     };
     public readonly initializePromise: Promise<void>;
 

@@ -17,6 +17,7 @@ interface ModelConfig {
     embedBatchDelayMs?: number;
     visionBatchDelayMs?: number;
     debugMode?: boolean;
+    showBenchmarkViewer?: boolean;
 }
 
 
@@ -24,6 +25,19 @@ interface ModelConfig {
 export function useModelConfig() {
     const [config, setConfig] = useState<ModelConfig | null>(null);
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent).detail as ModelConfig | undefined;
+            if (detail) {
+                setConfig(detail);
+            }
+        };
+        window.addEventListener('synvo:model-config-updated', handler as EventListener);
+        return () => {
+            window.removeEventListener('synvo:model-config-updated', handler as EventListener);
+        };
+    }, []);
 
     const fetchConfig = useCallback(async () => {
         if (!window.api?.getModelConfig) return;
@@ -41,6 +55,7 @@ export function useModelConfig() {
         try {
             const updated = await window.api.setModelConfig(newConfig);
             setConfig(updated);
+            window.dispatchEvent(new CustomEvent('synvo:model-config-updated', { detail: updated }));
         } catch (error) {
             console.error('Failed to update model config:', error);
         } finally {

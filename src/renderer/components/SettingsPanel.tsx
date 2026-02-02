@@ -1,4 +1,4 @@
-import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle } from 'lucide-react';
+import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle, BarChart3 } from 'lucide-react';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { CSSProperties, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -1087,6 +1087,35 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                                 ⚠️ Debug mode is enabled. Logs will be saved to your home folder. Restart the app to apply changes.
                                             </p>
                                         )}
+                                    </div>
+                                    <div className="pt-3 border-t">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                                                <div>
+                                                    <span className="text-sm font-medium">Benchmark Viewer</span>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Show the benchmark viewer in the sidebar.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => updateConfig({
+                                                    showBenchmarkViewer: !(config?.showBenchmarkViewer ?? false)
+                                                })}
+                                                className={cn(
+                                                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                                                    (config?.showBenchmarkViewer ?? false) ? "bg-primary" : "bg-muted"
+                                                )}
+                                            >
+                                                <span
+                                                    className={cn(
+                                                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                                        (config?.showBenchmarkViewer ?? false) ? "translate-x-6" : "translate-x-1"
+                                                    )}
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

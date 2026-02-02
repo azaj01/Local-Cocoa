@@ -10,8 +10,9 @@ interface SidebarProps {
     onSelectSession: (id: string) => void;
     onCreateSession: () => void;
     onDeleteSession: (id: string) => void;
-    activeView: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory';
-    onSelectView: (view: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory') => void;
+    activeView: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory' | 'benchmark';
+    onSelectView: (view: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory' | 'benchmark') => void;
+    showBenchmarkViewer?: boolean;
     onOpenIndexProgress?: () => void;
     isIndexing?: boolean;
     indexStatus?: IndexProgressUpdate['status'] | null;
@@ -26,6 +27,7 @@ export function Sidebar({
     onDeleteSession,
     activeView,
     onSelectView,
+    showBenchmarkViewer = false,
     onOpenIndexProgress,
     isIndexing = false,
     indexStatus = null,
@@ -228,6 +230,24 @@ export function Sidebar({
                     <Settings className="h-4 w-4" />
                     Models & Settings
                 </button>
+                {showBenchmarkViewer && (
+                    <button
+                        onClick={() => onSelectView('benchmark')}
+                        className={cn(
+                            "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            isCocoaSkin
+                                ? activeView === 'benchmark'
+                                    ? "bg-[#3d2f1c]/50 text-[#e8d4bc]"
+                                    : "text-[#c9a87c] hover:bg-[#3d2f1c]/30 hover:text-[#e8d4bc]"
+                                : activeView === 'benchmark'
+                                    ? "bg-accent text-accent-foreground"
+                                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        )}
+                    >
+                        <BarChart3 className="h-4 w-4" />
+                        Benchmark Viewer
+                    </button>
+                )}
 
                 {showIndexingShortcut ? (
                     <button

@@ -114,6 +114,7 @@ async function startServices() {
         LOCAL_MODEL_VLM_MMPROJ_FILE: vlmMmprojPath ? vlmMmprojPath: '',
         LOCAL_SERVICE_LOG_TO_FILE: config.backend.logToFile ?? 'false',
         LOCAL_SERVICE_BIN_PATH: config.paths.backendRoot,
+        LOCAL_USER_PLUGINS_DIR: config.paths.userPluginsRoot,
         // Below variables are only effective in local-cocoa-service's dev build for debugpy support
         DEBUG: process.env.DEBUG ?? 'false',
         PYTHONUNBUFFERED: process.env.PYTHONUNBUFFERED ?? '0',

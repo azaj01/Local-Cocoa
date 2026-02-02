@@ -225,6 +225,12 @@ const api = {
         ipcRenderer.invoke('files:pick-one', options),
     pickFiles: (options?: { filters?: { name: string; extensions: string[] }[] }): Promise<string[]> =>
         ipcRenderer.invoke('files:pick-multiple', options),
+    benchmarkListResultFolders: (): Promise<string[]> =>
+        ipcRenderer.invoke('benchmark:list-result-folders'),
+    benchmarkListResultFiles: (folder: string): Promise<string[]> =>
+        ipcRenderer.invoke('benchmark:list-result-files', { folder }),
+    benchmarkReadResultFile: (folder: string, file: string): Promise<string> =>
+        ipcRenderer.invoke('benchmark:read-result-file', { folder, file }),
     onModelDownloadEvent: (callback: (event: ModelDownloadEvent) => void) => {
         const subscription = (_event: any, payload: ModelDownloadEvent) => callback(payload);
         ipcRenderer.on('models:progress', subscription);

@@ -103,6 +103,8 @@ benchmark/results/
 benchmark/*.log
 benchmark/data/
 
+profiling/
+
 
 # always ignore python cache everywhere
 __pycache__/

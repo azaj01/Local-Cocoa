@@ -41,6 +41,7 @@ export class PluginManager extends EventEmitter {
     };
     
     private pluginsPath: string;
+    private userPluginsPath: string | null = null;
     private userDataPath: string;
     private pluginViews: Map<string, BrowserView> = new Map();
     private pluginStorage: Map<string, Record<string, unknown>> = new Map();
@@ -53,9 +54,9 @@ export class PluginManager extends EventEmitter {
     
         this.pluginsPath = path.join( config.paths.resourceRoot, PLUGINS_DIR);
         
-        // Ensure plugins directory exists
+        // Ensure system plugins directory exists. Use plugins folder doesn't need to initialize since it is external
         if (!fs.existsSync(this.pluginsPath)) {
-            console.warn(`[PluginManager] Plugins directory does not exist: ${this.pluginsPath}`);
+            console.warn(`[PluginManager] System plugins directory does not exist: ${this.pluginsPath}`);
             // Create it if missing (though it should exist in the project)
             fs.mkdirSync(this.pluginsPath, { recursive: true });
         }
@@ -144,8 +145,14 @@ export class PluginManager extends EventEmitter {
     async initialize(): Promise<void> {
         console.log('[PluginManager] Initializing plugin system...');
         
-        // Discover all plugins
+        // Discover system plugins
         await this.discoverPlugins(this.pluginsPath);
+
+        // Discover user plugins if directory is specified
+        if (this.userPluginsPath) {
+            console.log(`[PluginManager] Discovering user plugins from: ${this.userPluginsPath}`);
+            await this.discoverPlugins(this.userPluginsPath);
+        }
         
         // Load plugins config (syncs with discovered plugins)
         const discoveredIds = Array.from(this.registry.plugins.keys());
@@ -419,7 +426,9 @@ export class PluginManager extends EventEmitter {
             }
             
             // Create plugin directory
-            const pluginDir = path.join(this.pluginsPath, manifest.id);
+            // Use userPluginsPath if available, otherwise fallback to system pluginsPath
+            const targetBaseDir = this.userPluginsPath || this.pluginsPath;
+            const pluginDir = path.join(targetBaseDir, manifest.id);
             if (fs.existsSync(pluginDir)) {
                 fs.rmSync(pluginDir, { recursive: true });
             }
@@ -438,7 +447,7 @@ export class PluginManager extends EventEmitter {
             
             await this.loadPlugin(manifest.id);
             
-            console.log(`[PluginManager] Installed plugin: ${manifest.name}`);
+            console.log(`[PluginManager] Installed plugin: ${manifest.name} to ${pluginDir}`);
             return { success: true, pluginId: manifest.id };
             
         } catch (error) {
@@ -635,6 +644,9 @@ export class PluginManager extends EventEmitter {
         
         // Rediscover
         await this.discoverPlugins(this.pluginsPath);
+        if (this.userPluginsPath) {
+            await this.discoverPlugins(this.userPluginsPath);
+        }
         
         // Reload all
         for (const [pluginId, plugin] of this.registry.plugins) {

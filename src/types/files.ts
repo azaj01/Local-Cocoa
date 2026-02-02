@@ -244,6 +244,7 @@ export interface QaResponse {
     rewrittenQuery?: string | null;
     queryVariants?: string[];
     diagnostics?: AgentDiagnostics;
+    thinkingSteps?: ThinkingStep[];
 }
 
 export type EmailProtocol = 'imap' | 'pop3' | 'outlook';
@@ -605,4 +606,3 @@ export interface FolderNode {
     files: ScannedFile[];
     isExpanded?: boolean;
 }
-

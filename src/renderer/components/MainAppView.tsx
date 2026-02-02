@@ -11,9 +11,11 @@ import { OnboardingGuide } from './onboarding/OnboardingGuide';
 import { StartupLoading } from './StartupLoading';
 import { MbtiAnalysis } from './MbtiAnalysis';
 import { UserMemory } from './UserMemory';
+import { BenchmarkResultViewer } from './BenchmarkResultViewer';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { useChatSession } from '../hooks/useChatSession';
 import { useModelStatus } from '../hooks/useModelStatus';
+import { useModelConfig } from '../hooks/useModelConfig';
 import { useMbtiAnalysis } from '../hooks/useMbtiAnalysis';
 import type {
     IndexedFile,
@@ -34,7 +36,7 @@ function isActivitySummariesPath(pathValue: string | null | undefined): boolean 
 }
 
 export function MainAppView() {
-    const [activeView, setActiveView] = useState<'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory'>('chat');
+    const [activeView, setActiveView] = useState<'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory' | 'benchmark'>('chat');
     const [isModelModalOpen, setIsModelModalOpen] = useState(false);
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => {
         return !localStorage.getItem(ONBOARDING_KEY);
@@ -91,6 +93,8 @@ export function MainAppView() {
         startDeepIndexing,
         stopDeepIndexing
     } = useWorkspaceData();
+    const { config } = useModelConfig();
+    const showBenchmarkViewer = config?.showBenchmarkViewer ?? false;
 
     const previousIsIndexingRef = useRef<boolean>(false);
     useEffect(() => {
@@ -112,8 +116,9 @@ export function MainAppView() {
             setNotification({ message: detail.message, action: detail.action });
         };
         const navigateHandler = (event: Event) => {
-            const detail = (event as CustomEvent).detail as { view?: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' } | undefined;
+            const detail = (event as CustomEvent).detail as { view?: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory' | 'benchmark' } | undefined;
             if (!detail?.view) return;
+            if (detail.view === 'benchmark' && !showBenchmarkViewer) return;
             setActiveView(detail.view);
         };
 
@@ -123,7 +128,7 @@ export function MainAppView() {
             window.removeEventListener('synvo:notify', notifyHandler as EventListener);
             window.removeEventListener('synvo:navigate', navigateHandler as EventListener);
         };
-    }, []);
+    }, [showBenchmarkViewer]);
 
     // Backend is ready when health check passes and we're no longer in startup phase
     const isBackendReady = !backendStarting && health && health.status !== 'degraded';
@@ -441,7 +446,8 @@ export function MainAppView() {
         return stats;
     }, [files, folders, indexingItems]);
 
-    const handleViewSelect = (view: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory') => {
+    const handleViewSelect = (view: 'chat' | 'knowledge' | 'models' | 'settings' | 'extensions' | 'scan' | 'mbti' | 'memory' | 'benchmark') => {
+        if (view === 'benchmark' && !showBenchmarkViewer) return;
         setActiveView(view);
     };
 
@@ -481,6 +487,12 @@ export function MainAppView() {
             setSkippedQueueFiles(new Set());
         }
     }, [isIndexing, skippedQueueFiles.size]);
+
+    useEffect(() => {
+        if (!showBenchmarkViewer && activeView === 'benchmark') {
+            setActiveView('chat');
+        }
+    }, [activeView, showBenchmarkViewer]);
 
     const handlePauseIndexing = useCallback(async () => {
         const api = window.api;
@@ -536,6 +548,7 @@ export function MainAppView() {
                             onDeleteSession={handleDeleteSession}
                             activeView={activeView}
                             onSelectView={handleViewSelect}
+                            showBenchmarkViewer={showBenchmarkViewer}
                             onOpenIndexProgress={handleOpenIndexProgress}
                             isIndexing={isIndexing}
                             indexStatus={progress?.status ?? null}
@@ -665,6 +678,11 @@ export function MainAppView() {
                             onResetAnalysis={resetMbtiAnalysis}
                             setProgress={setMbtiProgress}
                             files={visibleFiles}
+                        />
+                    )}
+                    {activeView === 'benchmark' && showBenchmarkViewer && (
+                        <BenchmarkResultViewer
+                            onReferenceOpen={handleReferenceOpen}
                         />
                     )}
 

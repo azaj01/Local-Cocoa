@@ -76,6 +76,7 @@ export const config = {
             // Always use compiled preload.js (ts-node in preload context causes issues)
             preload: path.join(projectRoot, 'dist-electron', 'preload', 'preload.js'),
             rendererDist: path.join(projectRoot, 'dist-electron', 'renderer'),
+            userPluginsRoot: process.env.LOCAL_USER_PLUGINS_DIR ? path.resolve(projectRoot, process.env.LOCAL_USER_PLUGINS_DIR) : '',
         };
     },
     windows: {
