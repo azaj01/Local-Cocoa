@@ -51,7 +51,7 @@ export class PythonServer {
             // Use executable directly
             console.log(`Launch local cocoa server: ${config.paths.localCocoaServer}`);
             this.process = spawn(config.paths.localCocoaServer, [], {
-                env: envOverrides,
+                env: { ...process.env, ...envOverrides },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
             console.log(`Spawned PID: ${this.process?.pid}`);

@@ -17,6 +17,32 @@ export interface ModelRuntimeStatus {
     whisper: ModelRuntimeStatusEntry;
 }
 
+// Preset types
+export type PresetId = 'eco' | 'balanced' | 'pro';
+
+export interface PresetModels {
+    vlm: string;
+    embedding: string;
+    reranker: string;
+    whisper: string;
+}
+
+export interface Preset {
+    label: string;
+    description: string;
+    models: PresetModels;
+    estimatedVram: string;
+    estimatedDownloadSize: string;
+}
+
+export interface PresetsConfig {
+    presets: Record<PresetId, Preset>;
+    autoSelectRules: {
+        mac: { ramThresholds: { minGB: number; preset: PresetId }[] };
+        windows: { vramThresholds: { minGB: number; preset: PresetId }[]; cpuOnlyPreset: PresetId };
+    };
+}
+
 const FALLBACK_MODEL_ASSETS: ModelAssetStatus[] = [
     { id: 'embedding', label: 'Embedding encoder', path: '', exists: false, sizeBytes: null },
     { id: 'reranker', label: 'Reranker model', path: '', exists: false, sizeBytes: null },
@@ -32,6 +58,11 @@ export function useModelStatus() {
     const [availableModels, setAvailableModels] = useState<ModelAssetStatus[]>([]);
     const [runtimeStatus, setRuntimeStatus] = useState<ModelRuntimeStatus | null>(null);
     const bootstrapTriggerRef = useRef(false);
+
+    // Preset-related state
+    const [presets, setPresets] = useState<PresetsConfig | null>(null);
+    const [recommendedPreset, setRecommendedPreset] = useState<PresetId | null>(null);
+    const [selectedPreset, setSelectedPreset] = useState<PresetId | null>(null);
 
     const modelBridgeAvailable = typeof window !== 'undefined' && Boolean(window.api?.modelStatus);
     const modelsReady = modelBridgeAvailable ? Boolean(modelStatus?.ready) : true;
@@ -96,8 +127,8 @@ export function useModelStatus() {
     }, []);
 
     useEffect(() => {
-        refreshRuntimeStatus();
-        const timer = setInterval(refreshRuntimeStatus, 5000);
+        setTimeout(() => { void refreshRuntimeStatus(); }, 0);
+        const timer = setInterval(() => { void refreshRuntimeStatus(); }, 5000);
         return () => clearInterval(timer);
     }, [refreshRuntimeStatus]);
 
@@ -199,11 +230,67 @@ export function useModelStatus() {
         });
     }, [modelBridgeAvailable]);
 
+    // Preset management functions
+    const loadPresets = useCallback(async () => {
+        const api = window.api;
+        if (!api?.getPresets) return;
+        try {
+            const presetsData = await api.getPresets();
+            setPresets(presetsData);
+            return presetsData;
+        } catch (error) {
+            console.error('Failed to load presets', error);
+            return null;
+        }
+    }, []);
+
+    const loadRecommendedPreset = useCallback(async () => {
+        const api = window.api;
+        if (!api?.getRecommendedPreset) return;
+        try {
+            const recommended = await api.getRecommendedPreset() as PresetId;
+            setRecommendedPreset(recommended);
+            return recommended;
+        } catch (error) {
+            console.error('Failed to get recommended preset', error);
+            return null;
+        }
+    }, []);
+
+    const applyPreset = useCallback(async (presetId: PresetId) => {
+        const api = window.api;
+        if (!api?.applyPreset) return;
+        try {
+            await api.applyPreset(presetId);
+            setSelectedPreset(presetId);
+            // Refresh model status
+            await refreshModelStatus();
+            // Fetch updated config and dispatch event so useModelConfig updates
+            if (api.getModelConfig) {
+                const updatedConfig = await api.getModelConfig();
+                window.dispatchEvent(new CustomEvent('synvo:model-config-updated', { detail: updatedConfig }));
+            }
+        } catch (error) {
+            console.error('Failed to apply preset', error);
+        }
+    }, [refreshModelStatus]);
+
+    const handleDownloadSelectedModels = useCallback(() => {
+        if (!modelBridgeAvailable) {
+            return;
+        }
+        bootstrapTriggerRef.current = true;
+        setModelDownloadLog([]);
+        window.api?.downloadSelectedModels?.().catch((error) => {
+            console.error('Selected model download failed', error);
+        });
+    }, [modelBridgeAvailable]);
+
     useEffect(() => {
         if (!modelBridgeAvailable) {
             return;
         }
-        void refreshModelStatus();
+        setTimeout(() => { void refreshModelStatus(); }, 0);
     }, [modelBridgeAvailable, refreshModelStatus]);
 
     useEffect(() => {
@@ -237,13 +324,16 @@ export function useModelStatus() {
         if (!nextLine) {
             return;
         }
-        setModelDownloadLog((prev) => {
-            if (prev.length && prev[prev.length - 1] === nextLine) {
-                return prev;
-            }
-            const updated = [...prev, nextLine];
-            return updated.length > 60 ? updated.slice(updated.length - 60) : updated;
-        });
+        // Use timeout to break synchronous setState cycle
+        setTimeout(() => {
+            setModelDownloadLog((prev) => {
+                if (prev.length && prev[prev.length - 1] === nextLine) {
+                    return prev;
+                }
+                const updated = [...prev, nextLine];
+                return updated.length > 60 ? updated.slice(updated.length - 60) : updated;
+            });
+        }, 0);
     }, [modelDownloadEvent]);
 
     return {
@@ -260,6 +350,14 @@ export function useModelStatus() {
         addLocalModel,
         runtimeStatus,
         refreshRuntimeStatus,
-        refreshModelStatus
+        refreshModelStatus,
+        // Preset-related exports
+        presets,
+        recommendedPreset,
+        selectedPreset,
+        loadPresets,
+        loadRecommendedPreset,
+        applyPreset,
+        handleDownloadSelectedModels,
     };
 }

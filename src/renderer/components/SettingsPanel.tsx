@@ -1,4 +1,4 @@
-import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle, BarChart3 } from 'lucide-react';
+import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle, BarChart3, Sparkles, Battery, Zap, Gauge } from 'lucide-react';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { CSSProperties, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -357,7 +357,13 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     const { skin, setSkin } = useSkin();
     const { health, systemSpecs } = useWorkspaceData();
     const { config, loading: configLoading, updateConfig } = useModelConfig();
-    const { modelStatus, handleManualModelDownload, handleRedownloadModel, modelDownloadEvent, runtimeStatus } = useModelStatus();
+    const { modelStatus, handleRedownloadModel, modelDownloadEvent, runtimeStatus, presets, loadPresets, applyPreset, selectedPreset, loadRecommendedPreset, handleDownloadSelectedModels } = useModelStatus();
+
+    // Load presets on mount
+    useEffect(() => {
+        loadPresets();
+        loadRecommendedPreset();
+    }, [loadPresets, loadRecommendedPreset]);
     const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
 
     const formatDuration = (seconds: number | null | undefined) => {
@@ -380,7 +386,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     // Get active model label for each service type
     const getActiveModelLabel = useCallback((key: 'embedding' | 'rerank' | 'vision' | 'whisper'): string | null => {
         if (!config || !modelStatus?.assets) return null;
-        
+
         let activeId: string | undefined;
         switch (key) {
             case 'embedding':
@@ -396,9 +402,9 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                 activeId = config.activeAudioModelId;
                 break;
         }
-        
+
         if (!activeId) return null;
-        
+
         const asset = modelStatus.assets.find(a => a.id === activeId);
         return asset?.label ?? activeId;
     }, [config, modelStatus?.assets]);
@@ -737,7 +743,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     // Get available embedding models (those that exist)
     const embeddingModels = useMemo(() => {
         if (!modelStatus?.assets) return [];
-        return modelStatus.assets.filter(a => a.id.includes('embedding') && a.exists);
+        return modelStatus.assets.filter(a => a.id.includes('embedding'));
     }, [modelStatus]);
     const currentEmbeddingModelId = config?.activeEmbeddingModelId || 'embedding-q4';
 
@@ -745,7 +751,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     const rerankerModels = useMemo(() => {
         if (!modelStatus?.assets) return [];
         return modelStatus.assets.filter(a =>
-            (a.id.includes('reranker') || a.id.includes('bge')) && a.exists
+            (a.id.includes('reranker') || a.id.includes('bge'))
         );
     }, [modelStatus]);
     const currentRerankerModelId = config?.activeRerankerModelId || 'reranker';
@@ -753,7 +759,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     // Get available audio models (whisper models that exist)
     const audioModels = useMemo(() => {
         if (!modelStatus?.assets) return [];
-        return modelStatus.assets.filter(a => a.id.includes('whisper') && a.exists);
+        return modelStatus.assets.filter(a => a.id.includes('whisper'));
     }, [modelStatus]);
     const currentAudioModelId = config?.activeAudioModelId || 'whisper-small';
 
@@ -1124,6 +1130,52 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
 
                     {activeTab === 'models' && config && (
                         <div className="space-y-6">
+                            {/* Preset Selection */}
+                            <div className="rounded-lg border bg-card p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-amber-500" />
+                                    <h3 className="text-sm font-medium">Model Preset</h3>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Choose a preset optimized for your hardware. This will auto-configure the best models for you.
+                                </p>
+
+                                <div className="grid grid-cols-3 gap-3">
+                                    {presets && Object.entries(presets.presets).map(([id, preset]) => (
+                                        <button
+                                            key={id}
+                                            onClick={() => applyPreset(id as any)}
+                                            className={cn(
+                                                "relative flex flex-col items-start gap-2 p-3 rounded-lg border text-left transition-all hover:bg-accent",
+                                                selectedPreset === id
+                                                    ? "border-amber-500 bg-amber-50 dark:bg-amber-950/20 ring-1 ring-amber-500/20"
+                                                    : "bg-background"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between w-full">
+                                                <span className="font-medium text-sm capitalize">{id}</span>
+                                                {id === 'eco' && <Battery className="h-3.5 w-3.5 text-emerald-500" />}
+                                                {id === 'balanced' && <Zap className="h-3.5 w-3.5 text-amber-500" />}
+                                                {id === 'pro' && <Gauge className="h-3.5 w-3.5 text-red-500" />}
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground leading-snug">
+                                                {preset.description}
+                                            </p>
+                                            <div className="flex items-center gap-2 mt-auto pt-2 w-full">
+                                                <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                                    ~{preset.estimatedVram}
+                                                </span>
+                                            </div>
+                                            {selectedPreset === id && (
+                                                <div className="absolute top-2 right-2">
+                                                    <CheckCircle2 className="h-3.5 w-3.5 text-amber-500" />
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="rounded-lg border bg-card p-4 space-y-6">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Active Multimodal Model</label>
@@ -1141,7 +1193,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                     </select>
                                 </div>
 
-                                {embeddingModels.length > 1 && (
+                                {embeddingModels.length > 0 && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium">Active Embedding Model</label>
                                         <select
@@ -1152,7 +1204,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                         >
                                             {embeddingModels.map((model) => (
                                                 <option key={model.id} value={model.id}>
-                                                    {model.label} ({(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)
+                                                    {model.label} {model.exists ? `(${(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)` : '(Missing)'}
                                                 </option>
                                             ))}
                                         </select>
@@ -1162,7 +1214,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                     </div>
                                 )}
 
-                                {rerankerModels.length > 1 && (
+                                {rerankerModels.length > 0 && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium">Active Reranker Model</label>
                                         <select
@@ -1173,7 +1225,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                         >
                                             {rerankerModels.map((model) => (
                                                 <option key={model.id} value={model.id}>
-                                                    {model.label} ({(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)
+                                                    {model.label} {model.exists ? `(${(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)` : '(Missing)'}
                                                 </option>
                                             ))}
                                         </select>
@@ -1194,7 +1246,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                         >
                                             {audioModels.map((model) => (
                                                 <option key={model.id} value={model.id}>
-                                                    {model.label} ({(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)
+                                                    {model.label} {model.exists ? `(${(model.sizeBytes! / 1024 / 1024).toFixed(0)} MB)` : '(Missing)'}
                                                 </option>
                                             ))}
                                         </select>
@@ -1266,7 +1318,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-sm font-medium">Model Assets</h3>
                                     <button
-                                        onClick={() => handleManualModelDownload()}
+                                        onClick={() => handleDownloadSelectedModels()}
                                         disabled={isDownloading}
                                         className={cn(
                                             "inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
@@ -1282,12 +1334,11 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                         ) : (
                                             <>
                                                 <Download className="mr-2 h-3 w-3" />
-                                                Check & Download
+                                                Download Selected Models
                                             </>
                                         )}
                                     </button>
                                 </div>
-
                                 <div className="rounded-lg border bg-card p-4 space-y-6">
                                     {modelGroups.map((group) => (
                                         <div key={group.id} className="space-y-3">

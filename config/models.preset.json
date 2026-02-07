@@ -1,0 +1,75 @@
+{
+    "presets": {
+        "eco": {
+            "label": "Eco (Low Resources)",
+            "description": "Best for 8GB RAM Mac or <6GB VRAM Windows. Fast performance, lower quality.",
+            "models": {
+                "vlm": "vlm",
+                "embedding": "embedding-q4",
+                "reranker": "reranker",
+                "whisper": "whisper-small"
+            },
+            "estimatedVram": "~3.5 GB",
+            "estimatedDownloadSize": "~3.2 GB"
+        },
+        "balanced": {
+            "label": "Balanced (Recommended)",
+            "description": "Best for 16GB RAM Mac or 8GB VRAM Windows. Good balance of speed and quality.",
+            "models": {
+                "vlm": "vlm-4b",
+                "embedding": "embedding-q4",
+                "reranker": "reranker",
+                "whisper": "whisper-small"
+            },
+            "estimatedVram": "~5.5 GB",
+            "estimatedDownloadSize": "~5.0 GB"
+        },
+        "pro": {
+            "label": "Pro (High Performance)",
+            "description": "Best for 24GB+ RAM Mac or 12GB+ VRAM Windows. Highest quality output.",
+            "models": {
+                "vlm": "vlm-8b",
+                "embedding": "embedding-q4",
+                "reranker": "reranker",
+                "whisper": "whisper-large-v3-turbo"
+            },
+            "estimatedVram": "~9.0 GB",
+            "estimatedDownloadSize": "~9.5 GB"
+        }
+    },
+    "autoSelectRules": {
+        "mac": {
+            "ramThresholds": [
+                {
+                    "minGB": 0,
+                    "preset": "eco"
+                },
+                {
+                    "minGB": 16,
+                    "preset": "balanced"
+                },
+                {
+                    "minGB": 24,
+                    "preset": "pro"
+                }
+            ]
+        },
+        "windows": {
+            "vramThresholds": [
+                {
+                    "minGB": 0,
+                    "preset": "eco"
+                },
+                {
+                    "minGB": 8,
+                    "preset": "balanced"
+                },
+                {
+                    "minGB": 12,
+                    "preset": "pro"
+                }
+            ],
+            "cpuOnlyPreset": "eco"
+        }
+    }
+}

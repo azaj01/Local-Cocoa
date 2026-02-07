@@ -111,7 +111,7 @@ async function startServices() {
         LOCAL_MODEL_EMBEDDING_FILE: embeddingModelPath,
         LOCAL_MODEL_RERANK_FILE: rerankerModelPath,
         LOCAL_MODEL_WHISPER_FILE: whisperModelPath,
-        LOCAL_MODEL_VLM_MMPROJ_FILE: vlmMmprojPath ? vlmMmprojPath: '',
+        LOCAL_MODEL_VLM_MMPROJ_FILE: vlmMmprojPath ? vlmMmprojPath : '',
         LOCAL_SERVICE_LOG_TO_FILE: config.backend.logToFile ?? 'false',
         LOCAL_SERVICE_BIN_ROOT: config.paths.backendRoot,
         LOCAL_USER_PLUGINS_ROOT: config.paths.userPluginsRoot,
@@ -128,6 +128,10 @@ async function startServices() {
     startDirectMCPServer(windowManager);
 
     console.log('[Main] Starting services with config:', modelConfig);
+
+    // Sync config to backend (useful if backend was already running)
+    await modelManager.syncConfigToBackend();
+
     console.log('[Main] All models (VLM, Embedding, Reranker, Whisper) will be started on-demand by Python ModelManager');
 
     // NOTE: All AI models are now started on-demand by Python's ModelManager

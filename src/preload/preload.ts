@@ -70,7 +70,7 @@ const api = {
     // Staged indexing (two-round progressive system)
     stageProgress: (folderId?: string): Promise<any> =>
         ipcRenderer.invoke('index:stage-progress', folderId),
-    getErrorFiles: (folderId?: string): Promise<Array<{id: string; name: string; path: string; error_reason: string | null; error_at: string | null}>> =>
+    getErrorFiles: (folderId?: string): Promise<Array<{ id: string; name: string; path: string; error_reason: string | null; error_at: string | null }>> =>
         ipcRenderer.invoke('index:error-files', folderId),
     startSemanticIndexing: (): Promise<any> =>
         ipcRenderer.invoke('index:start-semantic'),
@@ -233,6 +233,11 @@ const api = {
     redownloadModel: (assetId: string): Promise<ModelStatusSummary> => ipcRenderer.invoke('models:redownload', assetId),
     getModelConfig: (): Promise<any> => ipcRenderer.invoke('models:get-config'),
     setModelConfig: (config: any): Promise<any> => ipcRenderer.invoke('models:set-config', config),
+    // Preset-related APIs
+    getPresets: (): Promise<any> => ipcRenderer.invoke('models:get-presets'),
+    getRecommendedPreset: (): Promise<string> => ipcRenderer.invoke('models:get-recommended-preset'),
+    applyPreset: (presetId: string): Promise<void> => ipcRenderer.invoke('models:apply-preset', presetId),
+    downloadSelectedModels: (): Promise<any> => ipcRenderer.invoke('models:download-selected'),
     addModel: (descriptor: any): Promise<any> => ipcRenderer.invoke('models:add', descriptor),
     pickFile: (options?: { filters?: { name: string; extensions: string[] }[] }): Promise<string | null> =>
         ipcRenderer.invoke('files:pick-one', options),

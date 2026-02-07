@@ -10,6 +10,13 @@ export function registerModelHandlers(modelManager: ModelManager, serviceManager
     ipcMain.handle('models:redownload', async (_event, assetId: string) => modelManager.redownloadAsset(assetId));
     ipcMain.handle('models:get-config', async () => modelManager.getConfig());
 
+    // Preset-related handlers
+    ipcMain.handle('models:get-presets', async () => modelManager.getPresets());
+    ipcMain.handle('models:get-recommended-preset', async () => modelManager.getRecommendedPreset());
+    ipcMain.handle('models:apply-preset', async (_event, presetId: string) => modelManager.applyPreset(presetId as any));
+    ipcMain.handle('models:download-selected', async () => modelManager.downloadSelectedModels());
+
+
     ipcMain.handle('models:set-config', async (_event, config) => {
         const oldConfig = await modelManager.getConfig();
         await modelManager.setConfig(config);

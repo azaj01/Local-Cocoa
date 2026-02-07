@@ -14,10 +14,42 @@ type ModelAssetDescriptor = {
     label: string;
     relativePath: string;
     optional?: boolean;
-    type: 'embedding' | 'reranker' | 'vlm' | 'completion';
+    type: 'embedding' | 'reranker' | 'vlm' | 'completion' | 'whisper';
     url: string;
     mmprojId?: string;
 };
+
+// Preset types
+type PresetId = 'eco' | 'balanced' | 'pro';
+
+interface PresetModels {
+    vlm: string;
+    embedding: string;
+    reranker: string;
+    whisper: string;
+}
+
+interface Preset {
+    label: string;
+    description: string;
+    models: PresetModels;
+    estimatedVram: string;
+    estimatedDownloadSize: string;
+}
+
+interface RamThreshold {
+    minGB: number;
+    preset: PresetId;
+}
+
+interface PresetsConfig {
+    presets: Record<PresetId, Preset>;
+    autoSelectRules: {
+        mac: { ramThresholds: RamThreshold[] };
+        windows: { vramThresholds: RamThreshold[]; cpuOnlyPreset: PresetId };
+    };
+}
+
 
 interface ModelConfig {
     activeModelId: string;
@@ -45,8 +77,10 @@ export class ModelManager extends EventEmitter {
     private readonly modelRootPath: string;
     private readonly userConfigPath: string;
     private readonly modelsConfigPath: string;
+    private readonly presetsConfigPath: string;
     private activeDownload: Promise<ModelStatusSummary> | null = null;
     private descriptors: ModelAssetDescriptor[] = [];
+    private presetsConfig: PresetsConfig | null = null;
     private proxyAgent: any | null = null;
     private config: ModelConfig = {
         activeModelId: 'vlm',
@@ -79,10 +113,12 @@ export class ModelManager extends EventEmitter {
 
         this.userConfigPath = path.join(this.modelRootPath, 'user.config.json');
         this.modelsConfigPath = path.join(config.paths.projectRoot, 'config', 'models.config.json');
+        this.presetsConfigPath = path.join(config.paths.projectRoot, 'config', 'models.preset.json');
 
         console.log('[ModelManager] Initialized');
         console.log('[ModelManager] Model Root:', this.modelRootPath);
         console.log('[ModelManager] Models Config:', this.modelsConfigPath);
+        console.log('[ModelManager] Presets Config:', this.presetsConfigPath);
 
         this.initializePromise = this.initialize();
     }
@@ -90,6 +126,110 @@ export class ModelManager extends EventEmitter {
     private async initialize() {
         await this.loadConfig();
         await this.loadModelDescriptors();
+        await this.loadPresets();
+    }
+
+    private async loadPresets(): Promise<void> {
+        try {
+            const data = await fs.readFile(this.presetsConfigPath, 'utf-8');
+            this.presetsConfig = JSON.parse(data);
+        } catch (error) {
+            console.error('[ModelManager] Failed to load models.preset.json:', error);
+            this.presetsConfig = null;
+        }
+    }
+
+    async getPresets(): Promise<PresetsConfig | null> {
+        if (!this.presetsConfig) {
+            await this.loadPresets();
+        }
+        return this.presetsConfig;
+    }
+
+    async getRecommendedPreset(): Promise<PresetId> {
+        if (!this.presetsConfig) {
+            await this.loadPresets();
+        }
+        if (!this.presetsConfig) {
+            return 'eco'; // Fallback if config fails to load
+        }
+
+        const os = await import('os');
+        const totalMemoryBytes = os.totalmem();
+        const totalMemoryGB = totalMemoryBytes / (1024 ** 3);
+
+        const rules = this.presetsConfig.autoSelectRules;
+
+        if (process.platform === 'darwin') {
+            // macOS: use RAM thresholds
+            const thresholds = [...rules.mac.ramThresholds].sort((a, b) => b.minGB - a.minGB);
+            for (const t of thresholds) {
+                if (totalMemoryGB >= t.minGB) {
+                    console.log(`[ModelManager] Auto-selected preset: ${t.preset} (Mac RAM: ${totalMemoryGB.toFixed(1)}GB)`);
+                    return t.preset;
+                }
+            }
+        } else if (process.platform === 'win32') {
+            // Windows: Would need GPU VRAM detection (not available in Node.js directly)
+            // For now, fall back to RAM-based selection similar to Mac
+            // In production, you'd use a native module or spawn nvidia-smi
+            const thresholds = [...rules.windows.vramThresholds].sort((a, b) => b.minGB - a.minGB);
+            // Without GPU detection, use RAM as proxy (conservative estimate)
+            for (const t of thresholds) {
+                if (totalMemoryGB >= t.minGB * 2) { // RAM should be ~2x VRAM for safe operation
+                    console.log(`[ModelManager] Auto-selected preset: ${t.preset} (Windows RAM-proxy: ${totalMemoryGB.toFixed(1)}GB)`);
+                    return t.preset;
+                }
+            }
+            return rules.windows.cpuOnlyPreset;
+        }
+
+        return 'eco'; // Fallback for Linux or unknown platforms
+    }
+
+    async applyPreset(presetId: PresetId): Promise<void> {
+        if (!this.presetsConfig) {
+            await this.loadPresets();
+        }
+        if (!this.presetsConfig) {
+            throw new Error('Presets configuration not loaded');
+        }
+
+        const preset = this.presetsConfig.presets[presetId];
+        if (!preset) {
+            throw new Error(`Unknown preset: ${presetId}`);
+        }
+
+        // Update config with preset model selections
+        await this.setConfig({
+            activeModelId: preset.models.vlm,
+            activeEmbeddingModelId: preset.models.embedding,
+            activeRerankerModelId: preset.models.reranker,
+            activeAudioModelId: preset.models.whisper,
+        });
+
+        console.log(`[ModelManager] Applied preset: ${presetId}`);
+    }
+
+    /**
+     * Get the model IDs that need to be downloaded based on current config selection.
+     * Includes mmproj dependencies for VLM models.
+     */
+    getSelectedModelIds(): string[] {
+        const ids: string[] = [
+            this.config.activeModelId,
+            this.config.activeEmbeddingModelId,
+            this.config.activeRerankerModelId,
+            this.config.activeAudioModelId,
+        ];
+
+        // Add mmproj dependency for VLM
+        const vlmDescriptor = this.descriptors.find(d => d.id === this.config.activeModelId);
+        if (vlmDescriptor?.mmprojId) {
+            ids.push(vlmDescriptor.mmprojId);
+        }
+
+        return ids.filter(Boolean);
     }
 
     private async loadModelDescriptors() {
@@ -116,6 +256,7 @@ export class ModelManager extends EventEmitter {
 
     private async saveConfig() {
         try {
+            await fs.mkdir(path.dirname(this.userConfigPath), { recursive: true });
             await fs.writeFile(this.userConfigPath, JSON.stringify(this.config, null, 2));
         } catch (error) {
             console.error('Failed to save model config:', error);
@@ -129,7 +270,65 @@ export class ModelManager extends EventEmitter {
     async setConfig(newConfig: Partial<ModelConfig>): Promise<void> {
         this.config = { ...this.config, ...newConfig };
         await this.saveConfig();
+        await this.syncConfigToBackend();
         this.emit('config-changed', this.config);
+    }
+
+    public async syncConfigToBackend(): Promise<void> {
+        // Resolve paths
+        try {
+            const vlmId = this.config.activeModelId || 'vlm';
+            const vlmPath = this.getModelPath(vlmId);
+
+            // Resolve mmproj
+            const vlmDescriptor = this.getDescriptor(vlmId);
+            let vlmMmprojPath = '';
+            if (vlmDescriptor?.mmprojId) {
+                vlmMmprojPath = this.getModelPath(vlmDescriptor.mmprojId);
+            } else if (vlmId === 'vlm') {
+                // Fallback for default
+                try { vlmMmprojPath = this.getModelPath('vlm-mmproj'); } catch { /* ignore */ }
+            }
+
+            const activeEmbeddingModelId = this.config.activeEmbeddingModelId || 'embedding-q4';
+            const embeddingModelPath = this.getModelPath(activeEmbeddingModelId);
+
+            const activeRerankerModelId = this.config.activeRerankerModelId || 'reranker';
+            const rerankerModelPath = this.getModelPath(activeRerankerModelId);
+
+            const activeAudioModelId = this.config.activeAudioModelId || 'whisper-small';
+            const whisperModelPath = this.getModelPath(activeAudioModelId);
+
+            const payload = {
+                vlm_model: vlmPath,
+                vlm_mmproj: vlmMmprojPath,
+                embedding_model: embeddingModelPath,
+                rerank_model: rerankerModelPath,
+                whisper_model: whisperModelPath
+            };
+
+            const backendUrl = config.urls.backend || 'http://127.0.0.1:8890';
+            // Use node-fetch or built-in fetch (available in Electron main process/Node 18+)
+            // We need to handle connection errors in case backend isn't running yet
+            const response = await fetch(`${backendUrl}/models/config`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                console.log('[ModelManager] Backend config updated successfully');
+            } else {
+                // It's okay if backend is not running yet (e.g. during initial load), 
+                // but if it is running, we want to know.
+                // We can check status code.
+                console.warn(`[ModelManager] Backend config update failed: ${response.status} ${response.statusText}`);
+            }
+
+        } catch (error) {
+            // Backend might not be running, which is fine during startup
+            console.debug('[ModelManager] Could not sync config to backend (might be offline):', error);
+        }
     }
 
     getModelPath(id: string): string {
@@ -156,7 +355,14 @@ export class ModelManager extends EventEmitter {
         const assets = await Promise.all(
             this.descriptors.map(async (descriptor) => this.describeAsset(descriptor))
         );
-        const missing = assets.filter((asset) => !asset.exists && !asset.optional).map((asset) => asset.id);
+
+        // Check only SELECTED models for ready status, not all non-optional
+        const selectedIds = this.getSelectedModelIds();
+        const missing = assets.filter((asset) => {
+            const isSelected = selectedIds.includes(asset.id);
+            return isSelected && !asset.exists;
+        }).map((asset) => asset.id);
+
         return {
             assets,
             ready: missing.length === 0 && this.descriptors.length > 0,
@@ -165,16 +371,30 @@ export class ModelManager extends EventEmitter {
         };
     }
 
-    async downloadMissing(): Promise<ModelStatusSummary> {
+    /**
+     * Download missing models.
+     * @param modelIds Optional array of model IDs to download. If not provided, downloads ALL missing models.
+     *                 If provided, only downloads the specified models (and their dependencies).
+     */
+    async downloadMissing(modelIds?: string[]): Promise<ModelStatusSummary> {
         if (this.activeDownload) {
             return this.activeDownload;
         }
-        this.activeDownload = this.performDownload();
+        this.activeDownload = this.performDownload(modelIds);
         try {
             return await this.activeDownload;
         } finally {
             this.activeDownload = null;
         }
+    }
+
+    /**
+     * Download only the models selected in user config.
+     */
+    async downloadSelectedModels(): Promise<ModelStatusSummary> {
+        const selectedIds = this.getSelectedModelIds();
+        console.log('[ModelManager] Downloading selected models:', selectedIds);
+        return this.downloadMissing(selectedIds);
     }
 
     async redownloadAsset(assetId: string): Promise<ModelStatusSummary> {
@@ -197,7 +417,7 @@ export class ModelManager extends EventEmitter {
         }
     }
 
-    private async performDownload(): Promise<ModelStatusSummary> {
+    private async performDownload(modelIds?: string[]): Promise<ModelStatusSummary> {
         await fs.mkdir(this.modelRootPath, { recursive: true });
 
         if (this.descriptors.length === 0) {
@@ -206,13 +426,13 @@ export class ModelManager extends EventEmitter {
 
         const status = await this.getStatus();
 
-        // Note: We don't return early if status.ready is true, because there might
-        // be optional assets that are missing and we want to download them too.
-
-        // Download all missing assets (including optional ones if they are missing)
+        // Filter assets to download
         const assetsToDownload = this.descriptors.filter(d => {
             const assetStatus = status.assets.find(a => a.id === d.id);
-            return !assetStatus?.exists;
+            const isMissing = !assetStatus?.exists;
+            // If modelIds provided, only download those specific models
+            const isRequested = !modelIds || modelIds.includes(d.id);
+            return isMissing && isRequested;
         });
 
         console.log('[ModelManager] Descriptors count:', this.descriptors.length);

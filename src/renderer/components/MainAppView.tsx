@@ -100,10 +100,10 @@ export function MainAppView() {
     useEffect(() => {
         const prev = previousIsIndexingRef.current;
         if (!prev && isIndexing) {
-            setIndexDrawerOpen(true);
+            setTimeout(() => setIndexDrawerOpen(true), 0);
             // If indexing starts while user is in File System, default to the progress tab.
             if (activeView === 'knowledge') {
-                requestRightPanelTab('progress');
+                setTimeout(() => requestRightPanelTab('progress'), 0);
             }
         }
         previousIsIndexingRef.current = isIndexing;
@@ -484,13 +484,13 @@ export function MainAppView() {
     // Clear skipped files when indexing completes or changes significantly
     useEffect(() => {
         if (!isIndexing && skippedQueueFiles.size > 0) {
-            setSkippedQueueFiles(new Set());
+            setTimeout(() => setSkippedQueueFiles(new Set()), 0);
         }
     }, [isIndexing, skippedQueueFiles.size]);
 
     useEffect(() => {
         if (!showBenchmarkViewer && activeView === 'benchmark') {
-            setActiveView('chat');
+            setTimeout(() => setActiveView('chat'), 0);
         }
     }, [activeView, showBenchmarkViewer]);
 
@@ -531,7 +531,7 @@ export function MainAppView() {
 
     return (
         <>
-            {(!isBackendReady && !modelsReady) ? (
+            {(!isBackendReady || !modelsReady) ? (
                 <StartupLoading
                     onOpenModelManager={() => setIsModelModalOpen(true)}
                     statusMessage={statusMessage}
@@ -646,7 +646,7 @@ export function MainAppView() {
                             }}
                             onOpenFile={handleOpenFile}
                             onAskAboutFile={handleAskAboutFile}
-                            onRefresh={refreshData}
+                            onRefresh={() => void refreshData()}
                         />
                     )}
                     {activeView === 'extensions' && (
@@ -701,11 +701,7 @@ export function MainAppView() {
             )}
             <ModelManagerModal
                 isOpen={isModelModalOpen && !isOnboardingOpen}
-                onClose={() => {
-                    if (modelsReady) {
-                        setIsModelModalOpen(false);
-                    }
-                }}
+                onClose={() => setIsModelModalOpen(false)}
             />
         </>
     );

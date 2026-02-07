@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Download, CheckCircle2, Sparkles, Coffee, Shield, Zap, ChevronRight } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Download, CheckCircle2, Sparkles, Coffee, Shield, Zap, ChevronRight, Battery, Gauge } from 'lucide-react';
 import { useModelStatus } from '../hooks/useModelStatus';
 import { cn } from '../lib/utils';
-import logo from '../assets/local_cocoa_logo_full.png';
 import mascot from '../assets/cocoa-mascot.png';
 
 interface WelcomeSetupProps {
@@ -70,9 +69,11 @@ function groupAssets(assets: Array<{ id: string; label: string; exists: boolean;
 }
 
 export function WelcomeSetup({ onComplete }: WelcomeSetupProps) {
-    const { modelStatus, handleManualModelDownload, modelDownloadEvent, modelsReady } = useModelStatus();
+    const { modelStatus, modelDownloadEvent, modelsReady, presets, loadPresets, applyPreset, selectedPreset, loadRecommendedPreset, recommendedPreset, handleDownloadSelectedModels } = useModelStatus();
     const [currentStep, setCurrentStep] = useState<'welcome' | 'downloading' | 'complete'>('welcome');
     const [hasStartedDownload, setHasStartedDownload] = useState(false);
+    const [isApplyingPreset, setIsApplyingPreset] = useState(false);
+    const pendingPresetRef = useRef<Promise<void> | null>(null);
 
     const isDownloading = modelDownloadEvent?.state === 'downloading';
     const downloadComplete = modelDownloadEvent?.state === 'completed';
@@ -108,9 +109,44 @@ export function WelcomeSetup({ onComplete }: WelcomeSetupProps) {
 
     const totalSizeGB = (totalSize / 1024 / 1024 / 1024).toFixed(1);
 
-    const handleStartDownload = () => {
+    // Track if initial preset has been applied
+    const hasAppliedInitialPreset = useRef(false);
+
+    // Wrapper to track preset application
+    const handlePresetSelect = useCallback(async (presetId: string) => {
+        setIsApplyingPreset(true);
+        const presetPromise = applyPreset(presetId as any);
+        pendingPresetRef.current = presetPromise;
+        try {
+            await presetPromise;
+        } finally {
+            setIsApplyingPreset(false);
+            pendingPresetRef.current = null;
+        }
+    }, [applyPreset]);
+
+    // Load presets on mount - run only once
+    useEffect(() => {
+        if (hasAppliedInitialPreset.current) return;
+
+        loadPresets();
+        loadRecommendedPreset().then(presetId => {
+            // If we have a recommended preset and no selection yet, apply it
+            if (presetId && !hasAppliedInitialPreset.current) {
+                hasAppliedInitialPreset.current = true;
+                handlePresetSelect(presetId);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const handleStartDownload = async () => {
+        // Wait for any pending preset application to complete
+        if (pendingPresetRef.current) {
+            await pendingPresetRef.current;
+        }
         setHasStartedDownload(true);
-        handleManualModelDownload();
+        handleDownloadSelectedModels();
     };
 
     return (
@@ -163,43 +199,129 @@ export function WelcomeSetup({ onComplete }: WelcomeSetupProps) {
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* What we'll download */}
                         <div>
-                            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                                <Download className="h-4 w-4 text-amber-500" />
-                                Required AI Models
-                            </h3>
-                            <div className="grid gap-3">
-                                {modelGroups.map((group, idx) => (
-                                    <div
-                                        key={group.id}
-                                        className={cn(
-                                            "flex items-center gap-4 p-4 rounded-xl border bg-card/50 transition-all duration-300",
-                                            "hover:bg-card hover:shadow-sm",
-                                            "animate-in fade-in slide-in-from-left-4"
-                                        )}
-                                        style={{ animationDelay: `${idx * 100}ms` }}
-                                    >
-                                        <div className={cn(
-                                            "shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
-                                            group.ready
-                                                ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
-                                        )}>
-                                            {group.ready ? <CheckCircle2 className="h-5 w-5" /> : group.icon}
+
+                            {/* Preset Selection */}
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-amber-500" />
+                                    Choose Performance Profile
+                                </h3>
+                                <div className="grid grid-cols-3 gap-3 mb-6">
+                                    {presets && Object.entries(presets.presets).map(([id, preset]) => {
+                                        const isRecommended = recommendedPreset === id;
+                                        return (
+                                            <button
+                                                key={id}
+                                                onClick={() => handlePresetSelect(id)}
+                                                className={cn(
+                                                    "relative flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all hover:bg-accent/50 hover:border-amber-200",
+                                                    selectedPreset === id
+                                                        ? "border-amber-500 bg-amber-50 dark:bg-amber-950/20 ring-1 ring-amber-500/20"
+                                                        : "bg-card/50",
+                                                    isRecommended && selectedPreset !== id && "border-emerald-500/50 ring-1 ring-emerald-500/20"
+                                                )}
+                                            >
+                                                {isRecommended && (
+                                                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap z-10">
+                                                        Recommended
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center justify-between w-full mt-1">
+                                                    <span className="font-medium text-sm capitalize">{id}</span>
+                                                    {id === 'eco' && <Battery className="h-4 w-4 text-emerald-500" />}
+                                                    {id === 'balanced' && <Zap className="h-4 w-4 text-amber-500" />}
+                                                    {id === 'pro' && <Gauge className="h-4 w-4 text-red-500" />}
+                                                </div>
+                                                <p className="text-[10px] text-muted-foreground leading-snug">
+                                                    {preset.description}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-auto pt-2 w-full border-t border-border/30">
+                                                    <span className="text-[10px] font-mono text-muted-foreground">
+                                                        ~{preset.estimatedVram} VRAM
+                                                    </span>
+                                                </div>
+                                                {selectedPreset === id && (
+                                                    <div className="absolute top-2 right-2">
+                                                        <CheckCircle2 className="h-4 w-4 text-amber-500" />
+                                                    </div>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                                    <Download className="h-4 w-4 text-amber-500" />
+                                    Included Models
+                                </h3>
+                                <div className="grid gap-3">
+                                    {modelGroups.map((group, idx) => (
+                                        <div
+                                            key={group.id}
+                                            className={cn(
+                                                "flex flex-col gap-3 p-4 rounded-xl border bg-card/50 transition-all duration-300",
+                                                "hover:bg-card hover:shadow-sm",
+                                                "animate-in fade-in slide-in-from-left-4"
+                                            )}
+                                            style={{ animationDelay: `${idx * 100}ms` }}
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className={cn(
+                                                    "shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
+                                                    group.ready
+                                                        ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                        : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
+                                                )}>
+                                                    {group.ready ? <CheckCircle2 className="h-5 w-5" /> : group.icon}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-sm">{group.label}</p>
+                                                    <p className="text-xs text-muted-foreground">{group.description}</p>
+                                                </div>
+                                                <div className={cn(
+                                                    "shrink-0 text-xs font-medium px-2 py-1 rounded-full",
+                                                    group.ready
+                                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                                )}>
+                                                    {group.ready ? "Ready" : "Required"}
+                                                </div>
+                                            </div>
+
+                                            {/* Detailed Asset List */}
+                                            <div className="pl-[3.5rem] space-y-1.5">
+                                                {group.assets.sort((a, b) => (b.exists ? 1 : 0) - (a.exists ? 1 : 0)).map(asset => (
+                                                    <div key={asset.id} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-muted/40 border border-transparent hover:border-border/50 transition-colors">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <div className={cn(
+                                                                "w-1.5 h-1.5 rounded-full shrink-0",
+                                                                asset.exists ? "bg-emerald-500" : "bg-amber-400"
+                                                            )} />
+                                                            <span className="truncate font-medium text-muted-foreground" title={asset.label}>
+                                                                {asset.label}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                            {asset.sizeBytes && (
+                                                                <span className="text-[10px] text-muted-foreground/70 font-mono">
+                                                                    {(asset.sizeBytes / 1024 / 1024).toFixed(0)} MB
+                                                                </span>
+                                                            )}
+                                                            <span className={cn(
+                                                                "text-[10px] px-1.5 py-0.5 rounded-md font-medium",
+                                                                asset.exists
+                                                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                                            )}>
+                                                                {asset.exists ? "Installed" : "Missing"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-sm">{group.label}</p>
-                                            <p className="text-xs text-muted-foreground">{group.description}</p>
-                                        </div>
-                                        <div className={cn(
-                                            "shrink-0 text-xs font-medium px-2 py-1 rounded-full",
-                                            group.ready
-                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                                : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                                        )}>
-                                            {group.ready ? "Ready" : "Required"}
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
@@ -314,16 +436,18 @@ export function WelcomeSetup({ onComplete }: WelcomeSetupProps) {
                 {currentStep === 'welcome' && (
                     <button
                         onClick={handleStartDownload}
+                        disabled={isApplyingPreset}
                         className={cn(
                             "w-full flex items-center justify-center gap-3 py-4 px-6 rounded-xl",
                             "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600",
                             "text-white font-semibold text-base shadow-lg",
                             "transition-all duration-200 hover:shadow-xl hover:scale-[1.02]",
-                            "focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                            "focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2",
+                            "disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
                         )}
                     >
                         <Download className="h-5 w-5" />
-                        Download AI Models
+                        {isApplyingPreset ? 'Applying preset...' : 'Download AI Models'}
                         <ChevronRight className="h-5 w-5 ml-1" />
                     </button>
                 )}
