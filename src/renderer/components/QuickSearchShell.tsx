@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchHit, NoteSummary, NoteContent } from '../types';
 import { QuickSearchPalette } from './QuickSearchPalette';
 import { useModelConfig } from '../hooks/useModelConfig';
+import { useNotesData } from '../../../plugins/synvo_ai_notes/frontend/renderer/useNotesData';
 
 type PaletteTab = 'search' | 'notes';
 
@@ -43,12 +44,20 @@ export function QuickSearchShell() {
     // Tab state
     const [activeTab, setActiveTab] = useState<PaletteTab>('search');
 
-    // Notes state
-    const [notes, setNotes] = useState<NoteSummary[]>([]);
-    const [_selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-    const [selectedNote, setSelectedNote] = useState<NoteContent | null>(null);
-    const [isNotesLoading, setIsNotesLoading] = useState(false);
-    const [isNoteSaving, setIsNoteSaving] = useState(false);
+    // Notes state and logic refactored to shared hook
+    const {
+        notes,
+        selectedNoteId, // Note: internal state _selectedNoteId was unused, renaming for clarity if needed
+        selectedNote,
+        loading: isNotesLoading,
+        saving: isNoteSaving,
+        loadNotes,
+        handleSelectNote,
+        handleCreateNote,
+        handleSaveNote,
+        handleDeleteNote,
+        handleBackToNotesList,
+    } = useNotesData();
 
     useEffect(() => {
         document.body.classList.add('spotlight-shell');
@@ -71,108 +80,11 @@ export function QuickSearchShell() {
         return cleanup;
     }, []);
 
-    // Load notes when switching to notes tab
-    const loadNotes = useCallback(async () => {
-        const api = window.api;
-        if (!api?.listNotes) return;
-
-        setIsNotesLoading(true);
-        try {
-            const notesList = await api.listNotes();
-            setNotes(notesList);
-        } catch (error) {
-            console.error('Failed to load notes:', error);
-        } finally {
-            setIsNotesLoading(false);
-        }
-    }, []);
-
     useEffect(() => {
         if (activeTab === 'notes') {
             void loadNotes();
         }
     }, [activeTab, loadNotes]);
-
-    // Load selected note content
-    const handleSelectNote = useCallback(async (noteId: string) => {
-        const api = window.api;
-        if (!api?.getNote) return;
-
-        setSelectedNoteId(noteId);
-        setIsNotesLoading(true);
-        try {
-            const note = await api.getNote(noteId);
-            setSelectedNote(note);
-        } catch (error) {
-            console.error('Failed to load note:', error);
-        } finally {
-            setIsNotesLoading(false);
-        }
-    }, []);
-
-    // Notify other windows that notes have changed
-    const notifyNotesChanged = useCallback(() => {
-        window.api?.notifyNotesChanged?.();
-    }, []);
-
-    // Create new note (don't notify - will notify when exiting edit mode)
-    const handleCreateNote = useCallback(async () => {
-        const api = window.api;
-        if (!api?.createNote) return;
-
-        try {
-            const now = new Date();
-            const defaultTitle = `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-            const newNote = await api.createNote({ title: defaultTitle, body: '' });
-            await loadNotes();
-            await handleSelectNote(newNote.id);
-            // Don't notify here - will notify when exiting edit mode
-        } catch (error) {
-            console.error('Failed to create note:', error);
-        }
-    }, [loadNotes, handleSelectNote]);
-
-    // Save note (without notifying - notification happens on exit)
-    const handleSaveNote = useCallback(async (noteId: string, payload: { title: string; body: string }) => {
-        const api = window.api;
-        if (!api?.updateNote) return;
-
-        setIsNoteSaving(true);
-        try {
-            const updated = await api.updateNote(noteId, payload);
-            setSelectedNote(updated);
-            await loadNotes();
-            // Don't notify here - will notify when exiting edit mode
-        } catch (error) {
-            console.error('Failed to save note:', error);
-        } finally {
-            setIsNoteSaving(false);
-        }
-    }, [loadNotes]);
-
-    // Delete note
-    const handleDeleteNote = useCallback(async (noteId: string) => {
-        const api = window.api;
-        if (!api?.deleteNote) return;
-
-        try {
-            await api.deleteNote(noteId);
-            setSelectedNoteId(null);
-            setSelectedNote(null);
-            await loadNotes();
-            notifyNotesChanged();
-        } catch (error) {
-            console.error('Failed to delete note:', error);
-        }
-    }, [loadNotes, notifyNotesChanged]);
-
-    // Back to notes list - notify other windows to refresh (for indexing)
-    const handleBackToNotesList = useCallback(() => {
-        setSelectedNoteId(null);
-        setSelectedNote(null);
-        // Notify when exiting edit mode so main window can refresh and re-index
-        notifyNotesChanged();
-    }, [notifyNotesChanged]);
 
     const runQuery = useCallback(
         async (value: string, modeOverride?: SpotlightMode, resumeTokenArg?: string) => {

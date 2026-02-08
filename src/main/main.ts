@@ -26,15 +26,11 @@ import { PythonServer } from './pythonServer';
 import { TrayManager } from './trayManager';
 import { updateLogSettings } from './logger';
 import { registerFileHandlers } from './ipc/files';
-import { registerEmailHandlers } from './ipc/email';
-import { registerNotesHandlers } from './ipc/notes';
 import { registerChatHandlers } from './ipc/chat';
-import { registerActivityHandlers } from './ipc/activity';
 import { registerModelHandlers } from './ipc/models';
 import { registerSystemHandlers } from './ipc/system';
 import { registerScanHandlers } from './ipc/scan';
 import { registerMemoryHandlers } from './ipc/memory';
-import { registerMCPHandlers, initMCPServer } from './ipc/mcp';
 import { initPluginManager } from './plugins';
 import { startDirectMCPServer } from './mcpDirectServer';
 import { ModelDownloadEvent } from './types';
@@ -55,6 +51,7 @@ let trayManager: TrayManager | null = null;
 
 // Initialize plugin manager
 const pluginManager = initPluginManager();
+pluginManager.registerIPCHandlers();
 
 function broadcastModelEvent(event: ModelDownloadEvent) {
     windowManager.broadcast('models:progress', event);
@@ -178,11 +175,10 @@ app.whenReady().then(async () => {
     // Initialize plugin system
     try {
         await pluginManager.initialize();
-        pluginManager.registerIPCHandlers();
 
         // Set main window reference for plugin notifications
-        if (windowManager.mainWindow) {
-            pluginManager.setMainWindow(windowManager.mainWindow);
+        if (windowManager) {
+            pluginManager.setWindowManager(windowManager);
         }
 
         console.log('[Main] Plugin system initialized');
@@ -235,17 +231,10 @@ app.on('before-quit', async (event) => {
     }
 });
 
-// Register IPC Handlers
+// Register IPC Handlers (core handlers only - plugin handlers are registered by plugin system)
 registerFileHandlers(windowManager);
-registerEmailHandlers();
-registerNotesHandlers();
 registerChatHandlers();
-registerActivityHandlers();
 registerModelHandlers(modelManager, serviceManager);
 registerSystemHandlers(windowManager);
 registerScanHandlers();
 registerMemoryHandlers();
-registerMCPHandlers(windowManager);
-
-// Initialize MCP server (for Claude Desktop integration)
-initMCPServer();

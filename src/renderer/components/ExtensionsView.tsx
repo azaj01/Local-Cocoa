@@ -5,25 +5,28 @@
  * Plugin order and enabled state are configurable in Settings.
  */
 
-import { useState, useCallback, useMemo, CSSProperties, ComponentType } from 'react';
+import { useState, useCallback, useMemo, CSSProperties, ComponentType, lazy, Suspense } from 'react';
 import { Activity, Mail, StickyNote, Puzzle, Brain, Link2, Mic, Loader2, Settings2, X, FolderKanban } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { EmailConnectorsPanel } from './EmailConnectorsPanel';
-import { EmailBrowser } from './EmailBrowser';
-import { EmailQAPage } from './EmailQAPage';
-import { NotesWorkspace } from './NotesWorkspace';
 import { MCPConnectionPanel } from './MCPConnectionPanel';
 import { PluginConfigPanel } from './PluginConfigPanel';
-import { DesktopOrganizer } from './DesktopOrganizer';
-import { ActivityTimeline } from './ActivityTimeline';
-import { MbtiAnalysis } from './MbtiAnalysis';
-import { EarlogPanel } from './EarlogPanel';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
-import { useEmailData } from '../hooks/useEmailData';
-import { useNotesData } from '../hooks/useNotesData';
+import { usePluginData } from '../hooks/usePluginData';
 import { usePluginConfig } from '../hooks/usePluginConfig';
-import { useMbtiAnalysis } from '../hooks/useMbtiAnalysis';
-import { OpenClawPanel } from './OpenClawPanel';
+import type { FolderRecord } from '../types';
+
+/**
+ * Dynamic plugin component loader
+ * Supports loading from multiple plugin directories:
+ * - System plugins: local-cocoa/plugins/* (built-in plugins)
+ * - User plugins: configured via user-plugins alias (from LOCAL_USER_PLUGINS_ROOT env var)
+ */
+const pluginModules = {
+    // System plugins (built-in)
+    ...import.meta.glob('system-plugins/*/frontend/renderer/*.tsx'),
+    // User plugins (configurable via LOCAL_USER_PLUGINS_ROOT environment variable)
+    ...import.meta.glob('user-plugins/*/frontend/renderer/*.tsx'),
+};
 
 // Icon map for dynamic icon lookup
 const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
@@ -43,20 +46,17 @@ interface ExtensionsViewProps {
     initialTab?: string;
 }
 
-export function ExtensionsView({ 
+export type MonitoredFolder = FolderRecord;
+export function ExtensionsView({
     initialTab,
 }: ExtensionsViewProps) {
     // Load plugin configuration - show all enabled tabs
     // Unsupported tabs will display "Unsupported yet" message when selected
-    const { enabledTabs, loading: pluginsLoading, refresh: refreshPlugins } = usePluginConfig();
-    
+    const { enabledTabs, loading: pluginsLoading } = usePluginConfig();
+
     const [selectedTab, setSelectedTab] = useState<string | null>(null);
     const [notification, setNotification] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-    // Email sub-view state: 'accounts' | 'memory'
-    type EmailSubView = 'accounts' | 'memory';
-    const [emailSubView, setEmailSubView] = useState<EmailSubView>('accounts');
 
     // Compute active tab: user selection takes precedence, otherwise use initialTab or first enabled
     const activeTab = useMemo(() => {
@@ -73,55 +73,21 @@ export function ExtensionsView({
     // Handler for closing settings panel - refresh data when closing
     const handleCloseSettings = useCallback(() => {
         setIsSettingsOpen(false);
-        // Refresh plugin data to ensure UI is in sync
-        refreshPlugins();
-    }, [refreshPlugins]);
+        // Use plugin data management (auto-refresh based on active tab)
+    }, []);
+
+    usePluginData(activeTab);
 
     const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
     const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
 
     // Use workspace data hook
     const {
-        emailAccounts: workspaceEmailAccounts,
         isIndexing,
-        emailIndexingByAccount,
-        noteIndexingItems,
-        noteFolderId,
         refreshData,
-    } = useWorkspaceData();
-
-    // Use email data hook
-    const {
         emailAccounts,
-        emailSyncStates,
-        emailMessages,
-        selectedEmailAccountId,
-        selectedEmailMessageId,
-        emailMessageCache,
-        loadingMessagesForAccount,
-        isEmailMessageLoading,
-        handleAddEmailAccount,
-        handleRemoveEmailAccount,
-        handleSyncEmailAccount,
-        handleSelectEmailAccountView,
-        handleRefreshEmailMessages,
-        handleSelectEmailMessage,
-        handleCloseEmailMessage,
-        handleOutlookConnected
-    } = useEmailData(workspaceEmailAccounts, refreshData);
-
-    // Use notes data hook
-    const {
-        notes,
-        selectedNoteId,
-        selectedNote,
-        isNoteLoading,
-        isNoteSaving,
-        handleSelectNote,
-        handleCreateNote,
-        handleSaveNote,
-        handleDeleteNote
-    } = useNotesData();
+        emailIndexingByAccount,
+    } = useWorkspaceData();
 
     // Activity tracking state
     const [isActivityTracking, setIsActivityTracking] = useState(false);
@@ -129,307 +95,147 @@ export function ExtensionsView({
         setIsActivityTracking(prev => !prev);
     }, []);
 
-    // MBTI Analysis hook
-    const {
-        isAnalyzing: isMbtiAnalyzing,
-        isGeneratingReport: isMbtiGeneratingReport,
-        progress: mbtiProgress,
-        result: mbtiResult,
-        error: mbtiError,
-        filterProgress: mbtiFilterProgress,
-        embedProgress: mbtiEmbedProgress,
-        startAnalysis: startMbtiAnalysis,
-        startAnalysisWithFilter: startMbtiAnalysisWithFilter,
-        stopAnalysis: stopMbtiAnalysis,
-        resetAnalysis: resetMbtiAnalysis,
-        setProgress: setMbtiProgress,
-        files: mbtiFiles,
-    } = useMbtiAnalysis();
-
-    // Email index handlers
-    const handleRescanEmailIndex = useCallback(async (folderId: string) => {
-        const api = window.api;
-        if (!api?.runStagedIndex) return;
-        try {
-            await api.runStagedIndex({ folders: [folderId] });
-            await refreshData();
-        } catch (error) {
-            console.error('Failed to rescan email index', error);
-            setNotification({ message: error instanceof Error ? error.message : 'Failed to rescan email index.' });
-        }
-    }, [refreshData]);
-
-    const handleReindexEmailIndex = useCallback(async (folderId: string) => {
-        const api = window.api;
-        if (!api?.runStagedIndex) return;
-        try {
-            await api.runStagedIndex({ folders: [folderId] });
-            await refreshData();
-        } catch (error) {
-            console.error('Failed to reindex email index', error);
-            setNotification({ message: error instanceof Error ? error.message : 'Failed to reindex email index.' });
-        }
-    }, [refreshData]);
-
-    // Notes index handlers
-    const handleRescanNotesIndex = useCallback(async () => {
-        if (!noteFolderId) return;
-        const api = window.api;
-        if (!api?.runStagedIndex) return;
-        try {
-            await api.runStagedIndex({ folders: [noteFolderId] });
-            await refreshData();
-        } catch (error) {
-            console.error('Failed to rescan notes index', error);
-            setNotification({ message: error instanceof Error ? error.message : 'Failed to rescan notes index.' });
-        }
-    }, [noteFolderId, refreshData]);
-
-    const handleReindexNotesIndex = useCallback(async () => {
-        if (!noteFolderId) return;
-        const api = window.api;
-        if (!api?.runStagedIndex) return;
-        try {
-            await api.runStagedIndex({ folders: [noteFolderId] });
-            await refreshData();
-        } catch (error) {
-            console.error('Failed to reindex notes index', error);
-            setNotification({ message: error instanceof Error ? error.message : 'Failed to reindex notes index.' });
-        }
-    }, [noteFolderId, refreshData]);
-
     // Get icon component for a tab
     const getTabIcon = useCallback((iconName: string) => {
         return ICON_MAP[iconName] || Puzzle;
     }, []);
 
-    // Render the content for the active tab
-    const renderTabContent = useCallback(() => {
-        // Handle email tab with sub-views (accounts, memory)
-        if (activeTab === 'email') {
-            // Sub-tab navigation
-            const subTabs = [
-                { id: 'accounts' as const, label: 'Email Accounts', icon: Mail },
-                { id: 'memory' as const, label: 'Email Memory', icon: Brain },
-            ];
-            
+    /**
+     * Cache for lazy-loaded plugin components to prevent unmounting on re-render
+     */
+    const pluginComponentCache = useMemo(() => new Map<string, any>(), []);
+
+    /**
+     * Dynamic plugin component loader
+     * Handles both system plugins and user plugins
+     * Handles both default and named exports
+     */
+    const loadPluginComponent = useCallback((pluginId: string, componentPath: string, componentName?: string) => {
+        const cacheKey = `${pluginId}:${componentPath}:${componentName || 'default'}`;
+
+        if (pluginComponentCache.has(cacheKey)) {
+            return pluginComponentCache.get(cacheKey);
+        }
+
+        // Construct the expected suffix to search for in module keys
+        const expectedSuffix = `${pluginId}/${componentPath}`.replace(/\\/g, '/');
+
+        // Find the matching module key
+        const match = Object.entries(pluginModules).find(([key]) => {
+            const normalizedKey = key.replace(/\\/g, '/');
+            return normalizedKey.endsWith(expectedSuffix);
+        });
+
+        if (match) {
+            const [fullPath, importFn] = match;
+            console.log(`[ExtensionsView] Loading plugin component: ${pluginId} from ${fullPath}${componentName ? ` (export: ${componentName})` : ''}`);
+
+            const Component = lazy(async () => {
+                const module = await (importFn as any)();
+                if (componentName && module[componentName]) {
+                    return { default: module[componentName] };
+                }
+                if (module.default) {
+                    return { default: module.default };
+                }
+                const firstExport = Object.values(module).find(val => typeof val === 'function');
+                if (firstExport) {
+                    return { default: firstExport as any };
+                }
+                throw new Error(`Could not find export for component ${componentName || 'default'} in ${fullPath}`);
+            });
+
+            pluginComponentCache.set(cacheKey, Component);
+            return Component;
+        }
+
+        console.warn(`[ExtensionsView] No loader found for plugin ${pluginId} at suffix: ${expectedSuffix}`);
+        return null;
+    }, [pluginComponentCache]);
+
+    /**
+     * Memoized active tab content
+     * computed only when active tab or shared data changes
+     */
+    const tabContent = useMemo(() => {
+        const currentTab = enabledTabs.find(t => t.id === activeTab);
+
+        if (!currentTab) {
             return (
-                <div className="h-full flex flex-col">
-                    {/* Sub-tab bar - only show when not viewing specific account emails */}
-                    {!selectedEmailAccountId && (
-                        <div className="flex-none border-b bg-muted/30 px-4">
-                            <div className="flex gap-1">
-                                {subTabs.map(subTab => {
-                                    const Icon = subTab.icon;
-                                    const isActive = emailSubView === subTab.id;
-                                    return (
-                                        <button
-                                            key={subTab.id}
-                                            onClick={() => setEmailSubView(subTab.id)}
-                                            className={cn(
-                                                "flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
-                                                isActive
-                                                    ? "border-primary text-foreground bg-background"
-                                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                                            )}
-                                        >
-                                            <Icon className="h-4 w-4" />
-                                            {subTab.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                    
-                    {/* Sub-view content */}
-                    <div className="flex-1 overflow-hidden">
-                        {/* Email Browser - when account is selected from accounts list */}
-                        {selectedEmailAccountId ? (
-                            <EmailBrowser
-                                messages={emailMessages?.[selectedEmailAccountId] ?? []}
-                                selectedMessageId={selectedEmailMessageId ?? null}
-                                onSelectMessage={(msgId) => handleSelectEmailMessage?.(selectedEmailAccountId, msgId)}
-                                messageContent={selectedEmailMessageId ? emailMessageCache?.[selectedEmailMessageId] ?? null : null}
-                                loading={loadingMessagesForAccount === selectedEmailAccountId}
-                                loadingContent={!!isEmailMessageLoading}
-                                onBack={() => handleSelectEmailAccountView?.('')}
-                                onRefresh={() => handleRefreshEmailMessages?.(selectedEmailAccountId)}
-                                onCloseMessage={handleCloseEmailMessage}
-                                accountLabel={emailAccounts.find(a => a.id === selectedEmailAccountId)?.label ?? 'Email'}
-                            />
-                        ) : emailSubView === 'memory' ? (
-                            <EmailQAPage
-                                accounts={emailAccounts}
-                            />
-                        ) : (
-                            <EmailConnectorsPanel
-                                accounts={emailAccounts}
-                                syncStates={emailSyncStates}
-                                pendingByAccount={emailIndexingByAccount}
-                                onAdd={handleAddEmailAccount}
-                                onRemove={handleRemoveEmailAccount}
-                                onSync={handleSyncEmailAccount}
-                                onRescanIndex={handleRescanEmailIndex}
-                                onReindexIndex={handleReindexEmailIndex}
-                                onOutlookConnected={handleOutlookConnected}
-                                onSelectAccount={handleSelectEmailAccountView}
-                                isIndexing={isIndexing}
-                            />
-                        )}
+                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                        <Puzzle className="h-16 w-16 mx-auto mb-6 opacity-40" />
+                        <h3 className="text-xl font-semibold mb-2 text-foreground/70">Tab Not Found</h3>
+                        <p className="text-sm max-w-md mx-auto">
+                            The selected tab could not be found.
+                        </p>
                     </div>
                 </div>
             );
         }
 
-        // Render based on active tab ID
-        switch (activeTab) {
-            case 'notes':
-                return (
-                    <div className="h-full w-full p-6">
-                        <NotesWorkspace
-                            notes={notes}
-                            selectedNoteId={selectedNoteId}
-                            selectedNote={selectedNote}
-                            loading={isNoteLoading}
-                            saving={isNoteSaving}
-                            onSelectNote={handleSelectNote}
-                            onCreateNote={handleCreateNote}
-                            onDeleteNote={handleDeleteNote}
-                            onSaveNote={handleSaveNote}
-                            pendingItems={noteIndexingItems}
-                            onRescanIndex={handleRescanNotesIndex}
-                            onReindexIndex={handleReindexNotesIndex}
-                            indexingBusy={isIndexing}
-                        />
-                    </div>
-                );
-            
-            case 'connections':
-                return (
-                    <div className="h-full w-full p-6 overflow-y-auto">
-                        <MCPConnectionPanel />
-                    </div>
-                );
-            
-            case 'desktop_organizer':
-                return (
-                    <div className="h-full w-full overflow-hidden">
-                        <DesktopOrganizer />
-                    </div>
-                );
-            
-            case 'activity':
-                return (
-                    <div className="h-full w-full overflow-hidden">
-                        <ActivityTimeline
-                            isTracking={isActivityTracking}
-                            onToggleTracking={handleToggleActivityTracking}
-                        />
-                    </div>
-                );
-            
-            case 'earlog':
-                return (
-                    <div className="h-full w-full overflow-hidden">
-                        <EarlogPanel />
-                    </div>
-                );
-            
-            case 'mbti':
-                return (
-                    <div className="h-full w-full overflow-hidden">
-                        <MbtiAnalysis
-                            isAnalyzing={isMbtiAnalyzing}
-                            isGeneratingReport={isMbtiGeneratingReport}
-                            progress={mbtiProgress}
-                            result={mbtiResult}
-                            error={mbtiError}
-                            filterProgress={mbtiFilterProgress}
-                            embedProgress={mbtiEmbedProgress}
-                            onStartAnalysis={startMbtiAnalysis}
-                            onStartAnalysisWithFilter={startMbtiAnalysisWithFilter}
-                            onStopAnalysis={stopMbtiAnalysis}
-                            onResetAnalysis={resetMbtiAnalysis}
-                            setProgress={setMbtiProgress}
-                            files={mbtiFiles}
-                        />
-                    </div>
-                );
-            
-            case 'openclaw':
-                return (
-                    <div className="h-full w-full overflow-hidden">
-                        <OpenClawPanel />
-                    </div>
-                );
-            
-            default:
-                // For unknown tabs, show a placeholder
-                return (
-                    <div className="h-full w-full flex items-center justify-center text-muted-foreground">
-                        <div className="text-center">
-                            <Puzzle className="h-16 w-16 mx-auto mb-6 opacity-40" />
-                            <h3 className="text-xl font-semibold mb-2 text-foreground/70">Unsupported Yet</h3>
-                            <p className="text-sm max-w-md mx-auto">
-                                This extension is not yet supported. Stay tuned for future updates!
-                            </p>
-                        </div>
-                    </div>
-                );
+        if (activeTab === 'connections') {
+            return (
+                <div className="h-full w-full p-6 overflow-y-auto">
+                    <MCPConnectionPanel />
+                </div>
+            );
         }
+
+        // Dynamic plugin loading for all other tabs
+        if (currentTab.path && currentTab.pluginId) {
+            const PluginComponent = loadPluginComponent(currentTab.pluginId, currentTab.path, currentTab.component);
+
+            if (PluginComponent) {
+                return (
+                    <Suspense fallback={
+                        <div className="flex h-full items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                        </div>
+                    }>
+                        <div className="h-full w-full overflow-hidden">
+                            <PluginComponent
+                                isIndexing={isIndexing}
+                                refreshData={refreshData}
+                                isActivityTracking={isActivityTracking}
+                                onToggleActivityTracking={handleToggleActivityTracking}
+                                // Pass extra workspace data that plugins might need
+                                emailAccounts={emailAccounts}
+                                emailIndexingByAccount={emailIndexingByAccount}
+                            />
+                        </div>
+                    </Suspense>
+                );
+            }
+        }
+
+        // Fallback for plugins without proper configuration
+        return (
+            <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                    <Puzzle className="h-16 w-16 mx-auto mb-6 opacity-40" />
+                    <h3 className="text-xl font-semibold mb-2 text-foreground/70">Plugin Not Configured</h3>
+                    <p className="text-sm max-w-md mx-auto">
+                        This plugin&apos;s frontend component could not be loaded. Please check the plugin configuration.
+                    </p>
+                    {currentTab.pluginId && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                            Plugin ID: {currentTab.pluginId}
+                        </p>
+                    )}
+                </div>
+            </div>
+        );
     }, [
         activeTab,
-        emailSubView,
-        selectedEmailAccountId,
-        emailMessages,
-        selectedEmailMessageId,
-        handleSelectEmailMessage,
-        emailMessageCache,
-        loadingMessagesForAccount,
-        isEmailMessageLoading,
-        handleSelectEmailAccountView,
-        handleRefreshEmailMessages,
-        handleCloseEmailMessage,
-        emailAccounts,
-        emailSyncStates,
-        emailIndexingByAccount,
-        handleAddEmailAccount,
-        handleRemoveEmailAccount,
-        handleSyncEmailAccount,
-        handleRescanEmailIndex,
-        handleReindexEmailIndex,
-        handleOutlookConnected,
+        enabledTabs,
+        loadPluginComponent,
         isIndexing,
-        notes,
-        selectedNoteId,
-        selectedNote,
-        isNoteLoading,
-        isNoteSaving,
-        handleSelectNote,
-        handleCreateNote,
-        handleDeleteNote,
-        handleSaveNote,
-        noteIndexingItems,
-        handleRescanNotesIndex,
-        handleReindexNotesIndex,
-        // Activity dependencies
+        refreshData,
+        emailAccounts,
+        emailIndexingByAccount,
         isActivityTracking,
         handleToggleActivityTracking,
-        // MBTI dependencies
-        isMbtiAnalyzing,
-        isMbtiGeneratingReport,
-        mbtiProgress,
-        mbtiResult,
-        mbtiError,
-        mbtiFilterProgress,
-        mbtiEmbedProgress,
-        startMbtiAnalysis,
-        startMbtiAnalysisWithFilter,
-        stopMbtiAnalysis,
-        resetMbtiAnalysis,
-        setMbtiProgress,
-        mbtiFiles,
     ]);
 
     // Show loading state while plugins are loading
@@ -471,7 +277,7 @@ export function ExtensionsView({
                 {/* Settings Panel for empty state */}
                 {isSettingsOpen && (
                     <div className="fixed inset-0 z-50">
-                        <div 
+                        <div
                             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
                             onClick={handleCloseSettings}
                         />
@@ -578,16 +384,6 @@ export function ExtensionsView({
                                             Test
                                         </span>
                                     )}
-                                    {tab.id === 'email' && emailAccounts.length > 0 && (
-                                        <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-muted">
-                                            {emailAccounts.length}
-                                        </span>
-                                    )}
-                                    {tab.id === 'notes' && notes.length > 0 && (
-                                        <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-muted">
-                                            {notes.length}
-                                        </span>
-                                    )}
                                     {isActive && (
                                         <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-primary rounded-full" />
                                     )}
@@ -600,18 +396,18 @@ export function ExtensionsView({
 
             {/* Content Area */}
             <div className="flex-1 overflow-hidden">
-                {renderTabContent()}
+                {tabContent}
             </div>
 
             {/* Settings Slide-over Panel */}
             {isSettingsOpen && (
                 <div className="fixed inset-0 z-50">
                     {/* Backdrop */}
-                    <div 
+                    <div
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
                         onClick={handleCloseSettings}
                     />
-                    
+
                     {/* Panel */}
                     <div className="absolute right-0 top-0 h-full w-full max-w-lg bg-background border-l shadow-2xl animate-in slide-in-from-right duration-300">
                         {/* Panel Header */}
@@ -632,7 +428,7 @@ export function ExtensionsView({
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-                        
+
                         {/* Panel Content */}
                         <div className="h-[calc(100%-80px)] overflow-y-auto p-6">
                             <PluginConfigPanel />

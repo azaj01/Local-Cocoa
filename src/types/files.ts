@@ -40,6 +40,7 @@ export interface FolderRecord {
     privacyLevel?: PrivacyLevel;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MonitoredFolder extends FolderRecord { }
 
 export interface FileRecord {
@@ -247,159 +248,35 @@ export interface QaResponse {
     thinkingSteps?: ThinkingStep[];
 }
 
-export type EmailProtocol = 'imap' | 'pop3' | 'outlook';
+// ==================== Email Types (Re-exported from mail plugin) ====================
+// These types have been moved to plugins/mail/frontend/types for modularity
+// Re-exporting here for backward compatibility
+export type {
+    EmailProtocol,
+    EmailAccountPayload,
+    EmailAccountSummary,
+    EmailSyncResult,
+    EmailMessageSummary,
+    EmailMessageContent,
+    AccountMemoryStatus,
+    BuildAccountMemoryResult,
+    AccountQAResult,
+    AccountQASource,
+    MemCellItem,
+    EpisodeItem,
+    FactItem,
+    AccountMemoryDetails,
+} from './plugins/mail';
 
-export interface EmailAccountPayload {
-    label: string;
-    protocol: EmailProtocol;
-    host?: string;
-    port?: number;
-    username?: string;
-    password?: string;
-    useSsl?: boolean;
-    folder?: string;
-    // Outlook
-    clientId?: string;
-    tenantId?: string;
-}
+// ==================== Notes Types (Re-exported from notes plugin) ====================
+// These types have been moved to plugins/notes/frontend/types for modularity
+// Re-exporting here for backward compatibility
+export type {
+    NoteSummary,
+    NoteContent,
+    NoteDraftPayload,
+} from './plugins/notes';
 
-export interface EmailAccountSummary {
-    id: string;
-    label: string;
-    protocol: EmailProtocol;
-    host?: string;
-    port: number;
-    username?: string;
-    useSsl: boolean;
-    folder?: string | null;
-    enabled: boolean;
-    createdAt: string;
-    updatedAt: string;
-    lastSyncedAt?: string | null;
-    lastSyncStatus?: string | null;
-    totalMessages: number;
-    recentNewMessages: number;
-    folderId: string;
-    folderPath: string;
-    // Outlook
-    clientId?: string;
-    tenantId?: string;
-}
-
-export interface EmailSyncResult {
-    accountId: string;
-    folderId: string;
-    folderPath: string;
-    newMessages: number;
-    totalMessages: number;
-    indexed: number;
-    lastSyncedAt: string;
-    status: 'ok' | 'error';
-    message?: string | null;
-}
-
-export interface EmailMessageSummary {
-    id: string;
-    accountId: string;
-    subject?: string | null;
-    sender?: string | null;
-    recipients: string[];
-    sentAt?: string | null;
-    storedPath: string;
-    size: number;
-    createdAt: string;
-    preview?: string | null;
-}
-
-export interface EmailMessageContent extends EmailMessageSummary {
-    markdown: string;
-}
-
-// Account-Level Email Memory Types (memory-v2.5)
-export interface AccountMemoryStatus {
-    accountId: string;
-    isBuilt: boolean;
-    memcellCount: number;
-    episodeCount: number;
-    eventLogCount: number;
-    lastBuiltAt?: string | null;
-}
-
-export interface BuildAccountMemoryResult {
-    success: boolean;
-    message: string;
-    accountId: string;
-    totalMessages: number;
-    memcellsCreated: number;
-    episodesCreated: number;
-    eventLogsCreated: number;
-}
-
-export interface AccountQAResult {
-    answer: string;
-    sources: AccountQASource[];
-    accountId: string;
-    memoriesUsed: number;
-}
-
-export interface AccountQASource {
-    type: 'email_memory';
-    id: string;
-    subject?: string;
-    sender?: string;
-}
-
-export interface MemCellItem {
-    id: string;
-    emailSubject: string;
-    emailSender?: string | null;
-    preview?: string | null;
-    timestamp?: string | null;
-}
-
-export interface EpisodeItem {
-    id: string;
-    memcellId?: string | null;
-    emailSubject?: string | null;
-    summary: string;
-    episode?: string | null;
-    timestamp?: string | null;
-}
-
-export interface FactItem {
-    id: string;
-    episodeId?: string | null;
-    emailSubject?: string | null;
-    fact: string;
-    timestamp?: string | null;
-}
-
-export interface AccountMemoryDetails {
-    accountId: string;
-    memcells: MemCellItem[];
-    episodes: EpisodeItem[];
-    facts: FactItem[];
-    totalMemcells: number;
-    totalEpisodes: number;
-    totalFacts: number;
-}
-
-export interface NoteSummary {
-    id: string;
-    title: string;
-    updatedAt: string;
-    preview?: string | null;
-}
-
-export interface NoteContent extends NoteSummary {
-    markdown: string;
-    createdAt: string;
-}
-
-export interface NoteDraftPayload {
-    title?: string | null;
-    body?: string | null;
-}
 
 export interface ModelAssetStatus {
     id: string;
@@ -427,17 +304,14 @@ export interface ModelDownloadEvent {
     logLine?: string;
 }
 
-export interface ActivityLog {
-    id: string;
-    timestamp: string;
-    description: string;
-    short_description?: string | null;
-}
+// ==================== Activity Types (Re-exported from activity plugin) ====================
+// These types have been moved to plugins/activity/frontend/types for modularity
+// Re-exporting here for backward compatibility
+export type {
+    ActivityLog,
+    ActivityTimelineResponse,
+} from './plugins/activity';
 
-export interface ActivityTimelineResponse {
-    logs: ActivityLog[];
-    summary?: string | null;
-}
 
 export type ThinkingStepStatus = 'pending' | 'running' | 'complete' | 'error';
 

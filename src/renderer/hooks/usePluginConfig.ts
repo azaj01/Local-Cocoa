@@ -11,6 +11,7 @@ export interface PluginTabInfo {
     label: string;
     icon: string;
     component?: string;
+    path?: string;
 }
 
 export interface PluginManifestWithConfig {
@@ -217,12 +218,13 @@ export function usePluginConfig(): UsePluginConfigReturn {
  * Used by ExtensionsView to render the correct component
  */
 export const PLUGIN_COMPONENT_MAP: Record<string, string> = {
-    'activity': 'ActivityTimeline',
-    'mail': 'EmailConnectorsPanel',
-    'notes': 'NotesWorkspace',
-    'earlog': 'EarlogPanel',
-    'mbti': 'MbtiAnalysis',
+    'activity': 'ActivityPluginMain',
+    'mail': 'MailPluginMain',
+    'notes': 'NotesPluginMain',
+    'earlog': 'EarlogPluginMain',
+    'mbti': 'MbtiPluginMain',
     'mcp': 'MCPConnectionPanel',
+    'openclaw': 'OpenClawPluginMain',
 };
 
 /**

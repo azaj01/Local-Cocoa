@@ -1,0 +1,25 @@
+{
+    "id": "synvo_ai_notes",
+    "name": "Notes",
+    "version": "1.0.0",
+    "description": "Create and manage notes with local storage and AI-powered search.",
+    "author": "Local Cocoa",
+    "category": "productivity",
+    "icon": "StickyNote",
+    "backend": {
+        "entrypoint": "router",
+        "requiresDatabase": true
+    },
+    "main": {
+        "entrypoint": "main.ts"
+    },
+    "frontend": {
+        "tab": {
+            "id": "notes",
+            "label": "Notes",
+            "icon": "StickyNote",
+            "component": "NotesPluginMain",
+            "path": "frontend/renderer/NotesPluginMain.tsx"
+        }
+    }
+}

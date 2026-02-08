@@ -45,6 +45,7 @@ export class PluginManager extends EventEmitter {
     private pluginViews: Map<string, BrowserView> = new Map();
     private pluginStorage: Map<string, Record<string, unknown>> = new Map();
     private mainWindow: BrowserWindow | null = null;
+    private windowManager: any | null = null;
     private pluginsConfig: PluginsUserConfig | null = null;
     
     constructor() {
@@ -62,6 +63,16 @@ export class PluginManager extends EventEmitter {
      */
     setMainWindow(window: BrowserWindow): void {
         this.mainWindow = window;
+    }
+
+    /**
+     * Set the window manager reference
+     */
+    setWindowManager(manager: any): void {
+        this.windowManager = manager;
+        if (manager.mainWindow) {
+            this.mainWindow = manager.mainWindow;
+        }
     }
     
     /**
@@ -214,6 +225,7 @@ export class PluginManager extends EventEmitter {
         label: string;
         icon: string;
         component?: string;
+        path?: string;
     }> {
         if (!this.pluginsConfig) {
             return [];
@@ -225,6 +237,7 @@ export class PluginManager extends EventEmitter {
             label: string;
             icon: string;
             component?: string;
+            path?: string;
         }> = [];
         
         for (const pluginId of this.pluginsConfig.order) {
@@ -242,6 +255,7 @@ export class PluginManager extends EventEmitter {
                     label: frontend.tab.label,
                     icon: frontend.tab.icon || 'Puzzle',
                     component: frontend.tab.component,
+                    path: frontend.tab.path,
                 });
             }
         }
@@ -307,6 +321,7 @@ export class PluginManager extends EventEmitter {
      * Load a plugin by ID
      */
     async loadPlugin(pluginId: string): Promise<boolean> {
+        console.log(`[PluginManager] Loading plugin: ${pluginId}...`);
         const plugin = this.registry.plugins.get(pluginId);
         if (!plugin) {
             console.error(`[PluginManager] Plugin not found: ${pluginId}`);
@@ -330,6 +345,46 @@ export class PluginManager extends EventEmitter {
                 }
             }
             
+            // Load main entrypoint if specified (support .js and .ts for dev)
+            const mainConfig = (plugin.manifest as any).main;
+            if (mainConfig?.entrypoint) {
+                let entrypointPath = path.join(plugin.path, mainConfig.entrypoint);
+                
+                // If the path doesn't exist, try with .ts extension in dev mode
+                if (!fs.existsSync(entrypointPath) && entrypointPath.endsWith('.js')) {
+                    const tsPath = entrypointPath.replace(/\.js$/, '.ts');
+                    if (fs.existsSync(tsPath)) {
+                        entrypointPath = tsPath;
+                    }
+                }
+
+                if (fs.existsSync(entrypointPath)) {
+                    console.log(`[PluginManager] Loading main entrypoint for ${pluginId}: ${entrypointPath}`);
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/no-require-imports
+                        const module = require(entrypointPath);
+                        
+                        // Call standardized registerHandlers function
+                        if (typeof module.registerHandlers === 'function') {
+                            module.registerHandlers({
+                                mainWindow: this.mainWindow,
+                                windowManager: this.windowManager
+                            });
+                        } else if (typeof module.default === 'function') {
+                            // Default export function
+                            module.default();
+                        } else if (typeof module === 'function') {
+                            // Direct function export
+                            module();
+                        } else {
+                            console.warn(`[PluginManager] No registerHandlers export found in ${pluginId} main entrypoint`);
+                        }
+                    } catch (e) {
+                        console.error(`[PluginManager] Failed to load main entrypoint for ${pluginId}:`, e);
+                    }
+                }
+            }
+
             plugin.status = 'active';
             this.emitEvent({ type: 'plugin-loaded', pluginId });
             console.log(`[PluginManager] Loaded plugin: ${pluginId}`);

@@ -1,0 +1,26 @@
+{
+    "id": "synvo_ai_mail",
+    "name": "Email Manager",
+    "version": "1.0.0",
+    "description": "Connect and manage your email accounts with local indexing.",
+    "author": "Local Cocoa",
+    "category": "productivity",
+    "icon": "Mail",
+    "backend": {
+        "entrypoint": "router",
+        "requiresDatabase": true
+    },
+    "main": {
+        "entrypoint": "main.ts"
+    },
+    "frontend": {
+        "tab": {
+            "id": "email",
+            "label": "Email",
+            "icon": "Mail",
+            "component": "MailPluginMain",
+            "path": "frontend/renderer/MailPluginMain.tsx"
+        }
+    }
+}
+

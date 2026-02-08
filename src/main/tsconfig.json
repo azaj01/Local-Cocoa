@@ -4,11 +4,14 @@
         "module": "CommonJS",
         "moduleResolution": "Node",
         "outDir": "../../dist-electron",
-        "rootDir": "../../src",
-        "noEmit": false
+        "rootDir": "..",
+        "noEmit": false,
+        "inlineSourceMap": true,
+        "inlineSources": true
     },
     "include": [
         ".",
-        "../preload"
+        "../preload",
+        "../types"
     ]
 }

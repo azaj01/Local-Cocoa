@@ -42,7 +42,7 @@ export interface FailedFile {
     timestamp: string;
 }
 
-const API_BASE_URL = process.env.LOCAL_RAG_API_URL ?? 'http://127.0.0.1:8890';
+export const API_BASE_URL = process.env.LOCAL_RAG_API_URL ?? 'http://127.0.0.1:8890';
 
 export type IndexOperationMode = 'rescan' | 'reindex';
 export type IndexOperationScope = 'global' | 'folder' | 'email' | 'notes';
@@ -95,7 +95,7 @@ export function clearCachedKey(): void {
     cachedKey = null;
 }
 
-function resolveEndpoint(endpoint: string): string {
+export function resolveEndpoint(endpoint: string): string {
     if (/^https?:\/\//i.test(endpoint)) {
         return endpoint;
     }
@@ -104,7 +104,7 @@ function resolveEndpoint(endpoint: string): string {
     return `${base}${pathPart}`;
 }
 
-async function requestJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
+export async function requestJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
     const headers = new Headers(init?.headers ?? {});
     if (!headers.has('content-type') && !(init?.body instanceof FormData)) {
         headers.set('content-type', 'application/json');
@@ -766,8 +766,8 @@ export async function updateAllModelsConfig(config: {
     });
 }
 
-export async function runStagedIndex(options?: { 
-    folders?: string[]; 
+export async function runStagedIndex(options?: {
+    folders?: string[];
     files?: string[];
     mode?: 'rescan' | 'reindex';
 }): Promise<IndexProgressUpdate> {
@@ -873,9 +873,9 @@ export async function deleteIndexedFile(fileId: string): Promise<void> {
 }
 
 // Plugin API prefixes
-const MAIL_PLUGIN_PREFIX = '/plugins/mail';
-const NOTES_PLUGIN_PREFIX = '/plugins/notes';
-const ACTIVITY_PLUGIN_PREFIX = '/plugins/activity';
+const MAIL_PLUGIN_PREFIX = '/plugins/synvo_ai_mail';
+const NOTES_PLUGIN_PREFIX = '/plugins/synvo_ai_notes';
+const ACTIVITY_PLUGIN_PREFIX = '/plugins/synvo_ai_activity';
 
 export async function listEmailAccounts(): Promise<EmailAccountSummary[]> {
     const data = await requestJson<any[]>(`${MAIL_PLUGIN_PREFIX}/accounts`, { method: 'GET' });
@@ -984,7 +984,7 @@ export interface AccountQAResult {
 // ==================== Account-Level Memory Functions (v2.5) ====================
 
 export async function buildAccountMemory(
-    accountId: string, 
+    accountId: string,
     userId: string = 'default_user'
 ): Promise<BuildAccountMemoryResult> {
     const data = await requestJson<any>(
@@ -1008,7 +1008,7 @@ export async function buildAccountMemory(
 }
 
 export async function getAccountMemoryStatus(
-    accountId: string, 
+    accountId: string,
     userId: string = 'default_user'
 ): Promise<AccountMemoryStatus> {
     const url = new URL(resolveEndpoint(`${MAIL_PLUGIN_PREFIX}/accounts/${encodeURIComponent(accountId)}/memory-status`));
@@ -1190,7 +1190,7 @@ export async function searchFilesStream(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        // eslint-disable-next-line no-constant-condition
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
@@ -1238,10 +1238,10 @@ export async function askWorkspaceStream(
     useVisionForAnswer?: boolean
 ): Promise<void> {
     // Only include limit in payload if explicitly provided; otherwise let backend use its qa_context_limit setting
-    const payload: Record<string, any> = { 
-        query, 
-        mode, 
-        search_mode: searchMode, 
+    const payload: Record<string, any> = {
+        query,
+        mode,
+        search_mode: searchMode,
         resume_token: resumeToken,
         use_vision_for_answer: useVisionForAnswer ?? false
     };
@@ -1273,7 +1273,7 @@ export async function askWorkspaceStream(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        // eslint-disable-next-line no-constant-condition
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
@@ -1716,7 +1716,7 @@ export async function streamBasicProfile(
         const decoder = new TextDecoder();
         let buffer = '';
 
-        // eslint-disable-next-line no-constant-condition
+
         while (true) {
             const { done, value } = await reader.read();
 
@@ -1817,13 +1817,13 @@ export async function getFilePrivacy(fileId: string): Promise<FilePrivacyRespons
  * Only callable from local UI - external requests will be rejected.
  */
 export async function setFolderPrivacy(
-    folderId: string, 
-    privacyLevel: 'normal' | 'private', 
+    folderId: string,
+    privacyLevel: 'normal' | 'private',
     applyToFiles: boolean = true
 ): Promise<FolderPrivacyResponse> {
     const data = await requestJson<any>(`/folders/${encodeURIComponent(folderId)}/privacy`, {
         method: 'PUT',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
             privacy_level: privacyLevel,
             apply_to_files: applyToFiles
         }),
@@ -1951,8 +1951,8 @@ export interface ExtractMemoryResponse {
  * @param chunkSize Custom chunk size in chars. If set, concatenates all text and re-chunks
  */
 export async function extractMemoryForFile(
-    fileId: string, 
-    userId: string = 'default_user', 
+    fileId: string,
+    userId: string = 'default_user',
     force: boolean = false,
     chunkSize?: number
 ): Promise<ExtractMemoryResponse> {
