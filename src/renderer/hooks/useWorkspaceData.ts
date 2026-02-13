@@ -9,7 +9,6 @@ import type {
     FileRecord,
     FileKind,
     IndexResultSnapshot,
-    EmailAccountSummary,
     SystemSpecs
 } from '../types';
 
@@ -117,13 +116,8 @@ function buildSnapshot(files: IndexedFile[], summary: IndexSummary | null): Inde
     };
 }
 
-function normalisePath(value: string | null | undefined): string {
-    return (value ?? '').replace(/\\/g, '/').toLowerCase();
-}
-
 export function useWorkspaceData() {
     const [folders, setFolders] = useState<FolderRecord[]>([]);
-    const [emailAccounts, setEmailAccounts] = useState<EmailAccountSummary[]>([]);
     const [files, setFiles] = useState<IndexedFile[]>([]);
     const [indexingItems, setIndexingItems] = useState<IndexingItem[]>([]);
     const [summary, setSummary] = useState<IndexSummary | null>(null);
@@ -134,12 +128,6 @@ export function useWorkspaceData() {
     const [isIndexing, setIsIndexing] = useState(false);
     const [backendStarting, setBackendStarting] = useState(true);
 
-    // These are needed for partitioning but managed by other hooks or passed in
-    // For now we'll keep the partitioning logic here but it might need to accept email/notes data
-    const [emailIndexingByAccount, setEmailIndexingByAccount] = useState<Record<string, IndexingItem[]>>({});
-    const [noteIndexingItems, setNoteIndexingItems] = useState<IndexingItem[]>([]);
-    const [noteFolderId, setNoteFolderId] = useState<string | null>(null);
-
     const pollTimerRef = useRef<number | null>(null);
     const startupRetryCountRef = useRef(0);
     const maxStartupRetries = 30; // Allow up to 30 retries (about 60 seconds with 2s intervals)
@@ -148,48 +136,6 @@ export function useWorkspaceData() {
     // ── Hysteresis: require N consecutive idle polls before transitioning isIndexing → false ──
     const idleStreakRef = useRef(0);
     const IDLE_HYSTERESIS = 2; // must see 2 consecutive "not running/paused" before declaring idle
-
-    const partitionIndexingItems = useCallback(
-        (
-            items: IndexingItem[],
-            folderRecords: FolderRecord[],
-            accountSummaries: EmailAccountSummary[]
-        ) => {
-            const accountFolderMap = new Map<string, string>();
-            accountSummaries.forEach((account) => {
-                accountFolderMap.set(account.folderId, account.id);
-            });
-
-            const notesFolderIds = new Set(
-                folderRecords
-                    .filter((folder) => folder.path.toLowerCase().includes('/.synvo_db/notes'))
-                    .map((folder) => folder.id)
-            );
-
-            const emailIndexing: Record<string, IndexingItem[]> = {};
-            const noteIndexing: IndexingItem[] = [];
-            const generalIndexing: IndexingItem[] = [];
-
-            items.forEach((item) => {
-                const accountId = accountFolderMap.get(item.folderId);
-                if (accountId) {
-                    if (!emailIndexing[accountId]) {
-                        emailIndexing[accountId] = [];
-                    }
-                    emailIndexing[accountId].push(item);
-                    return;
-                }
-                if (notesFolderIds.has(item.folderId)) {
-                    noteIndexing.push(item);
-                    return;
-                }
-                generalIndexing.push(item);
-            });
-
-            return { generalIndexing, emailIndexing, noteIndexing };
-        },
-        []
-    );
 
     const refreshData = useCallback(async () => {
         const api = window.api;
@@ -202,7 +148,7 @@ export function useWorkspaceData() {
             // First check if backend is reachable via health check
             console.log('[useWorkspaceData] Calling health check...');
             const healthData = await api.health();
-            console.log('[useWorkspaceData] Health check result:', healthData);
+            console.debug('[useWorkspaceData] Health check result:', healthData);
 
             // Handle null health response (backend not responding at all)
             if (!healthData) {
@@ -226,13 +172,13 @@ export function useWorkspaceData() {
             if (healthData.status === 'degraded') {
                 console.warn('[useWorkspaceData] Health status is degraded:', healthData);
                 setHealth(healthData);
-                
+
                 // Check if this is a "soft" degradation (backend reachable, but some services offline)
                 // vs "hard" degradation (backend completely unreachable)
-                const isBackendReachable = healthData.message !== 'Backend unreachable' && 
-                                           (healthData.indexedFiles > 0 || healthData.watchedFolders > 0 ||
-                                            (healthData.services && healthData.services.some(s => s.status === 'online')));
-                
+                const isBackendReachable = healthData.message !== 'Backend unreachable' &&
+                    (healthData.indexedFiles > 0 || healthData.watchedFolders > 0 ||
+                        (healthData.services && healthData.services.some(s => s.status === 'online')));
+
                 if (isBackendReachable) {
                     // Backend is reachable but some services are offline - continue loading data
                     console.log('[useWorkspaceData] Backend reachable despite degraded status, continuing...');
@@ -271,9 +217,9 @@ export function useWorkspaceData() {
             refreshCountRef.current += 1;
             const isCurrentlyIndexing = healthData.status === 'indexing';
             const shouldSkipInventory = isCurrentlyIndexing && (refreshCountRef.current % 5 === 0);
-            
+
             console.log('[useWorkspaceData] Fetching data...');
-            const [summaryData, folderData, inventoryData, emailData, specsData, stageProgressData] = await Promise.all([
+            const [summaryData, folderData, inventoryData, specsData, stageProgressData] = await Promise.all([
                 api.indexSummary(),
                 api.listFolders().then(f => { console.log('[useWorkspaceData] listFolders returned:', f.length, 'folders'); return f; }),
                 shouldSkipInventory
@@ -281,7 +227,6 @@ export function useWorkspaceData() {
                     // The old code used `indexing: []` which flashed the queue empty on skipped refreshes
                     ? Promise.resolve(null)
                     : api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {}),
-                api.listEmailAccounts?.() ?? Promise.resolve([]),
                 (api as any).getSystemSpecs ? (api as any).getSystemSpecs() : Promise.resolve(null),
                 (api as any).stageProgress ? (api as any).stageProgress() : Promise.resolve(null)
             ]);
@@ -313,39 +258,17 @@ export function useWorkspaceData() {
                 setProgress(prev => jsonEqual(prev, newProgressData) ? prev : newProgressData);
             }
 
-            const foundNotesFolder = folderData.find((folder: FolderRecord) => normalisePath(folder.path).includes('/.synvo_db/notes'));
-            setNoteFolderId(foundNotesFolder ? foundNotesFolder.id : null);
-
             // Only update files/indexing when we actually fetched inventory (not skipped)
             if (inventoryData) {
                 const folderMap = new Map<string, FolderRecord>(folderData.map((folder: FolderRecord) => [folder.id, folder]));
                 const indexedFiles = inventoryData.files.map((record: FileRecord) => mapIndexedFile(record, folderMap));
                 setFiles(indexedFiles);
 
-                const resolvedEmailAccounts = Array.isArray(emailData)
-                    ? (emailData as EmailAccountSummary[])
-                    : [];
-                setEmailAccounts(resolvedEmailAccounts);
-
-                const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
-                    inventoryData.indexing,
-                    folderData,
-                    resolvedEmailAccounts
-                );
-                if (generalIndexing.length > 0) {
-                    const active = generalIndexing.find(i => i.status === 'processing');
-                    console.log('[useWorkspaceData] indexingItems:', generalIndexing.length,
-                        'active:', active?.fileName, 'progress:', active?.progress,
-                        'detail:', active?.detail);
-                }
-                setIndexingItems(generalIndexing);
-                setEmailIndexingByAccount(emailIndexing);
-                setNoteIndexingItems(noteIndexing);
+                setIndexingItems(inventoryData.indexing);
             }
 
             return {
                 folders: folderData,
-                emailAccounts: Array.isArray(emailData) ? (emailData as EmailAccountSummary[]) : []
             };
         } catch (error) {
             console.error('[useWorkspaceData] Error in refreshData:', error);
@@ -367,8 +290,7 @@ export function useWorkspaceData() {
             console.error('Failed to refresh workspace data', error);
             return null;
         }
-     
-    }, [partitionIndexingItems, backendStarting]);
+    }, [backendStarting]);
 
     const stopPolling = useCallback(() => {
         if (pollTimerRef.current !== null) {
@@ -399,20 +321,10 @@ export function useWorkspaceData() {
                     // Only fetch full inventory every other poll to reduce DB contention
                     if (status.status === 'running') {
                         try {
-                            const [inventory, folderData, emailData] = await Promise.all([
-                                api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {}),
-                                api.listFolders(),
-                                api.listEmailAccounts?.() ?? Promise.resolve([])
-                            ]);
-
-                            const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
-                                inventory.indexing,
-                                folderData,
-                                emailData as EmailAccountSummary[]
-                            );
+                            const inventory = await api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {});
 
                             // Log active item progress for debugging
-                            const active = generalIndexing.find(i => i.status === 'processing');
+                            const active = (inventory.indexing as IndexingItem[]).find(i => i.status === 'processing');
                             if (active) {
                                 console.log('[useWorkspaceData] [StatusPoll] active:', active.fileName,
                                     'progress:', active.progress, 'detail:', active.detail,
@@ -420,9 +332,7 @@ export function useWorkspaceData() {
                                     'events:', active.recentEvents?.length ?? 0);
                             }
 
-                            setIndexingItems(prev => arraysEqual(prev, generalIndexing) ? prev : generalIndexing);
-                            setEmailIndexingByAccount(emailIndexing);
-                            setNoteIndexingItems(noteIndexing);
+                            setIndexingItems(prev => arraysEqual(prev, inventory.indexing) ? prev : inventory.indexing);
                             setProgress(prev => jsonEqual(prev, inventory.progress) ? prev : inventory.progress);
                         } catch (inventoryError) {
                             console.warn('Failed to refresh inventory during indexing', inventoryError);
@@ -441,8 +351,6 @@ export function useWorkspaceData() {
 
                     // Confirmed idle — clean up
                     setIndexingItems([]);
-                    setEmailIndexingByAccount({});
-                    setNoteIndexingItems([]);
                     setIsIndexing(false);
                     idleStreakRef.current = IDLE_HYSTERESIS;
                     stopPolling();
@@ -462,7 +370,7 @@ export function useWorkspaceData() {
         };
 
         pollTimerRef.current = window.setTimeout(poll, 2000);
-    }, [partitionIndexingItems, refreshData, stopPolling]);
+    }, [refreshData, stopPolling]);
 
     useEffect(() => {
         // Schedule initial load asynchronously to avoid synchronous setState in effect body
@@ -542,7 +450,6 @@ export function useWorkspaceData() {
 
     return {
         folders,
-        emailAccounts,
         files,
         indexingItems,
         summary,
@@ -551,9 +458,6 @@ export function useWorkspaceData() {
         health,
         systemSpecs,
         isIndexing,
-        emailIndexingByAccount,
-        noteIndexingItems,
-        noteFolderId,
         snapshot,
         fileMap,
         refreshData,

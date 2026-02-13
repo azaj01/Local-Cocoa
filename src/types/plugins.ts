@@ -79,13 +79,14 @@ export interface PluginFullInfo {
  * These are the built-in plugins with their default order
  */
 export const DEFAULT_PLUGINS_ORDER: string[] = [
-    'mcp',
-    'notes',
-    'mail',
-    'activity',
-    'earlog',
-    'mbti',
-    'desktop_organizer',
+    'synvo_ai_mcp',
+    'synvo_ai_notes',
+    'synvo_ai_mail',
+    'synvo_ai_activity',
+    'synvo_ai_earlog',
+    'synvo_ai_mbti',
+    'synvo_ai_desktop_organizer',
+    'synvo_ai_openclaw'
 ];
 
 /**
@@ -93,9 +94,10 @@ export const DEFAULT_PLUGINS_ORDER: string[] = [
  * Other plugins will be disabled by default and show "Unsupported yet" if opened
  */
 export const SUPPORTED_PLUGINS: string[] = [
-    'mcp',
-    'notes',
-    'mail',
+    'synvo_ai_mcp',
+    'synvo_ai_notes',
+    'synvo_ai_mail',
+    'synvo_ai_openclaw'
 ];
 
 /**

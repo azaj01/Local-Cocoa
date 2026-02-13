@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SearchHit, NoteSummary, NoteContent } from '../types';
+import type { SearchHit } from '../types';
 import { QuickSearchPalette } from './QuickSearchPalette';
 import { useModelConfig } from '../hooks/useModelConfig';
 
-type PaletteTab = 'search' | 'notes';
+type PaletteTab = 'search';
 
 const RESULT_LIMIT = 20;
 
@@ -20,7 +20,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function QuickSearchShell() {
-    const { config } = useModelConfig();
+    const { config: _config } = useModelConfig();
     const [mode, setMode] = useState<SpotlightMode>('rag');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchHit[]>([]);
@@ -41,14 +41,7 @@ export function QuickSearchShell() {
     const [resumeToken, setResumeToken] = useState<string | null>(null);
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<PaletteTab>('search');
-
-    // Notes state
-    const [notes, setNotes] = useState<NoteSummary[]>([]);
-    const [_selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-    const [selectedNote, setSelectedNote] = useState<NoteContent | null>(null);
-    const [isNotesLoading, setIsNotesLoading] = useState(false);
-    const [isNoteSaving, setIsNoteSaving] = useState(false);
+    const [_activeTab, setActiveTab] = useState<PaletteTab>('search');
 
     useEffect(() => {
         document.body.classList.add('spotlight-shell');
@@ -70,109 +63,6 @@ export function QuickSearchShell() {
 
         return cleanup;
     }, []);
-
-    // Load notes when switching to notes tab
-    const loadNotes = useCallback(async () => {
-        const api = window.api;
-        if (!api?.listNotes) return;
-
-        setIsNotesLoading(true);
-        try {
-            const notesList = await api.listNotes();
-            setNotes(notesList);
-        } catch (error) {
-            console.error('Failed to load notes:', error);
-        } finally {
-            setIsNotesLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === 'notes') {
-            void loadNotes();
-        }
-    }, [activeTab, loadNotes]);
-
-    // Load selected note content
-    const handleSelectNote = useCallback(async (noteId: string) => {
-        const api = window.api;
-        if (!api?.getNote) return;
-
-        setSelectedNoteId(noteId);
-        setIsNotesLoading(true);
-        try {
-            const note = await api.getNote(noteId);
-            setSelectedNote(note);
-        } catch (error) {
-            console.error('Failed to load note:', error);
-        } finally {
-            setIsNotesLoading(false);
-        }
-    }, []);
-
-    // Notify other windows that notes have changed
-    const notifyNotesChanged = useCallback(() => {
-        window.api?.notifyNotesChanged?.();
-    }, []);
-
-    // Create new note (don't notify - will notify when exiting edit mode)
-    const handleCreateNote = useCallback(async () => {
-        const api = window.api;
-        if (!api?.createNote) return;
-
-        try {
-            const now = new Date();
-            const defaultTitle = `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-            const newNote = await api.createNote({ title: defaultTitle, body: '' });
-            await loadNotes();
-            await handleSelectNote(newNote.id);
-            // Don't notify here - will notify when exiting edit mode
-        } catch (error) {
-            console.error('Failed to create note:', error);
-        }
-    }, [loadNotes, handleSelectNote]);
-
-    // Save note (without notifying - notification happens on exit)
-    const handleSaveNote = useCallback(async (noteId: string, payload: { title: string; body: string }) => {
-        const api = window.api;
-        if (!api?.updateNote) return;
-
-        setIsNoteSaving(true);
-        try {
-            const updated = await api.updateNote(noteId, payload);
-            setSelectedNote(updated);
-            await loadNotes();
-            // Don't notify here - will notify when exiting edit mode
-        } catch (error) {
-            console.error('Failed to save note:', error);
-        } finally {
-            setIsNoteSaving(false);
-        }
-    }, [loadNotes]);
-
-    // Delete note
-    const handleDeleteNote = useCallback(async (noteId: string) => {
-        const api = window.api;
-        if (!api?.deleteNote) return;
-
-        try {
-            await api.deleteNote(noteId);
-            setSelectedNoteId(null);
-            setSelectedNote(null);
-            await loadNotes();
-            notifyNotesChanged();
-        } catch (error) {
-            console.error('Failed to delete note:', error);
-        }
-    }, [loadNotes, notifyNotesChanged]);
-
-    // Back to notes list - notify other windows to refresh (for indexing)
-    const handleBackToNotesList = useCallback(() => {
-        setSelectedNoteId(null);
-        setSelectedNote(null);
-        // Notify when exiting edit mode so main window can refresh and re-index
-        notifyNotesChanged();
-    }, [notifyNotesChanged]);
 
     const runQuery = useCallback(
         async (value: string, modeOverride?: SpotlightMode, resumeTokenArg?: string) => {
@@ -486,7 +376,7 @@ export function QuickSearchShell() {
                 }
             }
         },
-        [mode, config]
+        [mode]
     );
 
     const handleClose = useCallback(() => {
@@ -571,14 +461,16 @@ export function QuickSearchShell() {
     }, [mode, query, runQuery]);
 
     useEffect(() => {
-        setResults([]);
-        setQaAnswer(null);
-        setQaMeta(null);
-        setStatusMessage(
-            mode === 'qa'
-                ? 'Agent QA mode · ask a question about your local files.'
-                : 'File search mode · type to search indexed files.'
-        );
+        setTimeout(() => {
+            setResults([]);
+            setQaAnswer(null);
+            setQaMeta(null);
+            setStatusMessage(
+                mode === 'qa'
+                    ? 'Agent QA mode · ask a question about your local files.'
+                    : 'File search mode · type to search indexed files.'
+            );
+        }, 0);
     }, [mode]);
 
     const handleModeChange = useCallback(
@@ -636,18 +528,6 @@ export function QuickSearchShell() {
             resumeToken={resumeToken}
             onSelect={handleSelect}
             onOpen={handleOpen}
-            // Notes props
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            notes={notes}
-            selectedNote={selectedNote}
-            isNotesLoading={isNotesLoading}
-            isNoteSaving={isNoteSaving}
-            onSelectNote={handleSelectNote}
-            onCreateNote={handleCreateNote}
-            onSaveNote={handleSaveNote}
-            onDeleteNote={handleDeleteNote}
-            onBackToNotesList={handleBackToNotesList}
         />
     );
 }

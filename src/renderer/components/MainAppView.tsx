@@ -9,14 +9,12 @@ import { ModelManagerModal } from './modals/ModelManagerModal';
 import { SettingsPanel } from './SettingsPanel';
 import { OnboardingGuide } from './onboarding/OnboardingGuide';
 import { StartupLoading } from './StartupLoading';
-import { MbtiAnalysis } from './MbtiAnalysis';
 import { UserMemory } from './UserMemory';
 import { BenchmarkResultViewer } from './BenchmarkResultViewer';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { useChatSession } from '../hooks/useChatSession';
 import { useModelStatus } from '../hooks/useModelStatus';
 import { useModelConfig } from '../hooks/useModelConfig';
-import { useMbtiAnalysis } from '../hooks/useMbtiAnalysis';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import type {
     IndexedFile,
@@ -457,22 +455,6 @@ export function MainAppView() {
         setActiveView(view);
     };
 
-    // MBTI Analysis hook
-    const {
-        isAnalyzing,
-        isGeneratingReport,
-        progress: mbtiProgress,
-        result: mbtiResult,
-        error: mbtiError,
-        filterProgress,
-        embedProgress,
-        startAnalysis: startMbtiAnalysis,
-        startAnalysisWithFilter,
-        stopAnalysis: stopMbtiAnalysis,
-        resetAnalysis: resetMbtiAnalysis,
-        setProgress: setMbtiProgress
-    } = useMbtiAnalysis();
-
     const handleOpenIndexProgress = useCallback(() => {
         setIndexDrawerOpen(true);
         requestRightPanelTab('progress');
@@ -683,23 +665,6 @@ export function MainAppView() {
                     )}
                     {activeView === 'settings' && (
                         <SettingsPanel initialTab="general" />
-                    )}
-                    {activeView === 'mbti' && (
-                        <MbtiAnalysis
-                            isAnalyzing={isAnalyzing}
-                            isGeneratingReport={isGeneratingReport}
-                            progress={mbtiProgress}
-                            result={mbtiResult}
-                            error={mbtiError}
-                            filterProgress={filterProgress}
-                            embedProgress={embedProgress}
-                            onStartAnalysis={startMbtiAnalysis}
-                            onStartAnalysisWithFilter={startAnalysisWithFilter}
-                            onStopAnalysis={stopMbtiAnalysis}
-                            onResetAnalysis={resetMbtiAnalysis}
-                            setProgress={setMbtiProgress}
-                            files={visibleFiles}
-                        />
                     )}
                     {activeView === 'benchmark' && showBenchmarkViewer && (
                         <BenchmarkResultViewer

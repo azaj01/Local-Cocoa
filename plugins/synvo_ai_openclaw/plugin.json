@@ -1,0 +1,18 @@
+{
+    "id": "synvo_ai_openclaw",
+    "name": "OpenClaw",
+    "version": "1.0.0",
+    "description": "OpenClaw integration for Synvo AI.",
+    "author": "Local Cocoa",
+    "category": "integration",
+    "icon": "Puzzle",
+    "frontend": {
+        "tab": {
+            "id": "openclaw",
+            "label": "OpenClaw",
+            "icon": "Puzzle",
+            "component": "OpenClawPluginMain",
+            "path": "frontend/renderer/OpenClawPluginMain.tsx"
+        }
+    }
+}

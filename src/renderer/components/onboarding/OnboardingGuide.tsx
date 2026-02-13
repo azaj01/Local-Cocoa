@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, ChevronRight, ChevronLeft, Download, Folder, Mail, FileText, Activity, Command, Box, CheckCircle2 } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import type { ModelDownloadEvent } from '../../types';
+import { cn } from '@/renderer/lib/utils';
+import type { ModelDownloadEvent } from '@/renderer/types';
 import bannerImage from '../../../../assets/banner/banner.png';
 
 interface OnboardingGuideProps {
@@ -43,7 +43,7 @@ export function OnboardingGuide({
 
     useEffect(() => {
         if (isOpen) {
-            setCurrentStep(0);
+            setTimeout(() => setCurrentStep(0), 0);
         }
     }, [isOpen]);
 
