@@ -11,6 +11,7 @@ import type {
     IndexResultSnapshot,
     IndexProgressUpdate,
     IndexingItem,
+    SystemResourceStatus,
 } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
 
@@ -24,10 +25,12 @@ interface KnowledgeBaseProps {
     
     // Staged indexing progress
     stageProgress?: StagedIndexProgress | null;
+    systemResourceStatus?: SystemResourceStatus | null;
     onStartSemantic?: () => Promise<void>;
     onStopSemantic?: () => Promise<void>;
     onStartDeep?: () => Promise<void>;
     onStopDeep?: () => Promise<void>;
+    onThrottleOverride?: () => Promise<void>;
 
     // Folder actions
     onAddFolder: () => Promise<void>;
@@ -50,20 +53,22 @@ type View = 'files' | 'search' | 'scan';
 
 export function KnowledgeBase({
     folders,
-    folderStats,
+    folderStats: _folderStats,
     files,
     snapshot,
     isIndexing,
-    indexProgress,
+    indexProgress: _indexProgress,
     stageProgress,
+    systemResourceStatus,
     onStartSemantic,
     onStopSemantic,
     onStartDeep,
     onStopDeep,
+    onThrottleOverride,
     onAddFolder,
     onAddFile,
     onRemoveFolder,
-    onRescanFolder,
+    onRescanFolder: _onRescanFolder,
     onReindexFolder,
     indexingItems,
     onSelectFile,
@@ -186,6 +191,8 @@ export function KnowledgeBase({
                                     onStopSemantic={onStopSemantic}
                                     onStartDeep={onStartDeep}
                                     onStopDeep={onStopDeep}
+                                    systemResourceStatus={systemResourceStatus}
+                                    onThrottleOverride={onThrottleOverride}
                                 />
                             )}
                             

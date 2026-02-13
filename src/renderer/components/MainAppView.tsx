@@ -17,6 +17,7 @@ import { useChatSession } from '../hooks/useChatSession';
 import { useModelStatus } from '../hooks/useModelStatus';
 import { useModelConfig } from '../hooks/useModelConfig';
 import { useMbtiAnalysis } from '../hooks/useMbtiAnalysis';
+import { useSystemStatus } from '../hooks/useSystemStatus';
 import type {
     IndexedFile,
     SearchHit
@@ -94,17 +95,22 @@ export function MainAppView() {
         stopDeepIndexing
     } = useWorkspaceData();
     const { config } = useModelConfig();
+    const { status: systemResourceStatus } = useSystemStatus();
     const showBenchmarkViewer = config?.showBenchmarkViewer ?? false;
 
     const previousIsIndexingRef = useRef<boolean>(false);
     useEffect(() => {
         const prev = previousIsIndexingRef.current;
         if (!prev && isIndexing) {
-            setTimeout(() => setIndexDrawerOpen(true), 0);
-            // If indexing starts while user is in File System, default to the progress tab.
-            if (activeView === 'knowledge') {
-                setTimeout(() => requestRightPanelTab('progress'), 0);
-            }
+            // Use a small delay to avoid flash-open if isIndexing briefly toggles true/false
+            const timer = setTimeout(() => {
+                setIndexDrawerOpen(true);
+                if (activeView === 'knowledge') {
+                    requestRightPanelTab('progress');
+                }
+            }, 300);
+            previousIsIndexingRef.current = isIndexing;
+            return () => clearTimeout(timer);
         }
         previousIsIndexingRef.current = isIndexing;
     }, [activeView, isIndexing, requestRightPanelTab]);
@@ -514,6 +520,16 @@ export function MainAppView() {
         }
     }, []);
 
+    const handleThrottleOverride = useCallback(async () => {
+        const api = window.api;
+        if (!api?.throttleOverride) return;
+        try {
+            await api.throttleOverride(30);
+        } catch (err) {
+            console.error('Failed to activate throttle override:', err);
+        }
+    }, []);
+
     const handleRemoveFromQueue = useCallback((filePath: string) => {
         // Add to skipped files set (UI-only, backend may still process)
         setSkippedQueueFiles(prev => {
@@ -553,6 +569,7 @@ export function MainAppView() {
                             isIndexing={isIndexing}
                             indexStatus={progress?.status ?? null}
                             onOpenGuide={handleOpenGuide}
+                            systemResourceStatus={systemResourceStatus}
                         />
                     }
                     rightPanel={
@@ -575,6 +592,8 @@ export function MainAppView() {
                                 onRemoveFromQueue={handleRemoveFromQueue}
                                 onPauseIndexing={handlePauseIndexing}
                                 onResumeIndexing={handleResumeIndexing}
+                                systemResourceStatus={systemResourceStatus}
+                                onThrottleOverride={handleThrottleOverride}
                             />
                         ) : null
                     }
@@ -630,10 +649,12 @@ export function MainAppView() {
                             isIndexing={isIndexing}
                             indexProgress={progress}
                             stageProgress={stageProgress}
+                            systemResourceStatus={systemResourceStatus}
                             onStartSemantic={startSemanticIndexing}
                             onStopSemantic={stopSemanticIndexing}
                             onStartDeep={startDeepIndexing}
                             onStopDeep={stopDeepIndexing}
+                            onThrottleOverride={handleThrottleOverride}
                             onAddFolder={handleAddFolder}
                             onAddFile={handleAddFile}
                             onRemoveFolder={handleRemoveFolder}

@@ -11,10 +11,13 @@ import {
     Pause,
     X,
     AlertCircle,
+    AlertTriangle,
     FolderOpen,
+    Zap,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { SystemResourceStatus } from '../types';
 
 interface ErrorFile {
     id: string;
@@ -31,6 +34,8 @@ interface StageProgressBarProps {
     onStartDeep?: () => Promise<void>;
     onStopDeep?: () => Promise<void>;
     className?: string;
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
 }
 
 function clampPercent(value: number | null | undefined): number {
@@ -150,10 +155,13 @@ export function StageProgressBar({
     onStopSemantic,
     onStartDeep, 
     onStopDeep,
-    className 
+    className,
+    systemResourceStatus,
+    onThrottleOverride,
 }: StageProgressBarProps) {
     const [semanticLoading, setSemanticLoading] = useState(false);
     const [deepLoading, setDeepLoading] = useState(false);
+    const [overrideLoading, setOverrideLoading] = useState(false);
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [errorFiles, setErrorFiles] = useState<ErrorFile[]>([]);
     const [loadingErrors, setLoadingErrors] = useState(false);
@@ -233,6 +241,28 @@ export function StageProgressBar({
     
     return (
         <div className={cn("rounded-xl border bg-card/80 backdrop-blur-sm p-4", className)}>
+            {/* Throttle banner */}
+            {systemResourceStatus?.throttled && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 mb-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate flex-1">Indexing paused: {systemResourceStatus.throttleReason ?? 'System under load'}</span>
+                    {onThrottleOverride && (
+                        <button
+                            onClick={async () => {
+                                setOverrideLoading(true);
+                                try { await onThrottleOverride(); } finally { setOverrideLoading(false); }
+                            }}
+                            disabled={overrideLoading}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors"
+                            title="Continue indexing for 30 minutes despite current conditions"
+                        >
+                            <Zap className="h-3 w-3" />
+                            {overrideLoading ? 'Resuming…' : 'Override'}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* Three stages */}
             <div className="flex items-start gap-6">
                 <Stage
@@ -260,7 +290,7 @@ export function StageProgressBar({
                 <Stage
                     label="Vision"
                     percent={deepPercent}
-                    count={progress.deep.done}
+                    count={progress.deep.done + (progress.deep.skipped ?? 0)}
                     total={progress.total}
                     isComplete={deepComplete}
                     color="violet"

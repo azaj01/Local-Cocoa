@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { X, FileText, ExternalLink, Activity, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Shield, ShieldOff, Maximize2, Loader2, Scan } from 'lucide-react';
-import type { IndexedFile, SearchHit, IndexProgressUpdate, IndexingItem, PrivacyLevel } from '../../types';
+import type { IndexedFile, SearchHit, IndexProgressUpdate, IndexingItem, PrivacyLevel, SystemResourceStatus } from '../../types';
 import type { StagedIndexProgress } from '../../../electron/backendClient';
 import { IndexProgressPanel } from '../IndexProgressPanel';
 
@@ -24,6 +24,9 @@ interface RightPanelProps {
     onRemoveFromQueue?: (filePath: string) => void;
     onPauseIndexing?: () => void;
     onResumeIndexing?: () => void;
+    // Throttle status
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
 }
 
 export function RightPanel({
@@ -41,6 +44,8 @@ export function RightPanel({
     onRemoveFromQueue,
     onPauseIndexing,
     onResumeIndexing,
+    systemResourceStatus = null,
+    onThrottleOverride,
 }: RightPanelProps) {
     const file = selectedFile;
     const hasPreview = !!(selectedFile || selectedHit);
@@ -106,7 +111,7 @@ export function RightPanel({
         if (tabRequest.tab === 'progress' && !hasIndexing) return;
         if (tabRequest.tab === 'preview' && !hasPreview) return;
         setActiveTab(tabRequest.tab);
-    }, [tabRequest?.nonce, tabRequest?.tab, hasIndexing, hasPreview]);
+    }, [tabRequest, hasIndexing, hasPreview]);
     const isImage = file?.kind === 'image' || file?.extension?.match(/^(jpg|jpeg|png|gif|webp|bmp)$/i);
     const isPdf = file?.extension?.toLowerCase() === 'pdf';
     const isVideo = file?.kind === 'video' || file?.extension?.match(/^(mp4|webm|ogg|mov)$/i);
@@ -750,6 +755,8 @@ export function RightPanel({
                         onRemoveItem={onRemoveFromQueue}
                         onPauseIndexing={onPauseIndexing}
                         onResumeIndexing={onResumeIndexing}
+                        systemResourceStatus={systemResourceStatus}
+                        onThrottleOverride={onThrottleOverride}
                     />
                 ) : null}
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Activity, FileText, Image as ImageIcon, Video, Music, X, Pause, Play, ChevronDown, ChevronUp, Search, Brain, Eye, Loader2 } from 'lucide-react';
+import { Activity, FileText, Image as ImageIcon, Video, Music, X, Pause, Play, ChevronDown, ChevronUp, Search, Brain, Eye, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
-import type { IndexProgressUpdate, IndexingItem } from '../types';
+import type { IndexProgressUpdate, IndexingItem, SystemResourceStatus } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
 
 function basename(pathValue: string): string {
@@ -94,6 +94,8 @@ export function IndexProgressPanel({
     onRemoveItem,
     onPauseIndexing,
     onResumeIndexing,
+    systemResourceStatus = null,
+    onThrottleOverride,
 }: {
     isIndexing: boolean;
     progress: IndexProgressUpdate | null;
@@ -102,6 +104,8 @@ export function IndexProgressPanel({
     onRemoveItem?: (filePath: string) => void;
     onPauseIndexing?: () => void;
     onResumeIndexing?: () => void;
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
 }) {
     const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
     const processing = indexingItems.find((item) => item.status === 'processing') ?? null;
@@ -139,7 +143,7 @@ export function IndexProgressPanel({
                 percent: clampPercent(stageProgress.fast_embed.percent),
             },
             vision: {
-                done: stageProgress.deep.done,
+                done: stageProgress.deep.done + (stageProgress.deep.skipped ?? 0),
                 total: stageProgress.total,
                 percent: clampPercent(stageProgress.deep.percent),
             },
@@ -148,13 +152,15 @@ export function IndexProgressPanel({
     }, [stageProgress, activeStage]);
 
     const headerMessage =
-        progress?.status === 'running'
-            ? (progress?.message ?? 'Indexing…')
-            : progress?.status === 'failed'
-                ? (progress?.lastError ?? 'Indexing failed')
-                : progress?.status === 'completed'
-                    ? 'Indexing completed'
-                    : 'Idle';
+        systemResourceStatus?.throttled
+            ? `Paused: ${systemResourceStatus.throttleReason ?? 'System load'}`
+            : progress?.status === 'running'
+                ? (progress?.message ?? 'Indexing…')
+                : progress?.status === 'failed'
+                    ? (progress?.lastError ?? 'Indexing failed')
+                    : progress?.status === 'completed'
+                        ? 'Indexing completed'
+                        : 'Idle';
 
     const processed = progress?.processed ?? 0;
     const total = progress?.total ?? null;
@@ -174,9 +180,13 @@ export function IndexProgressPanel({
                     <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
                         <div className={cn(
                             "h-10 w-10 rounded flex items-center justify-center shrink-0",
-                            activeStage ? "bg-primary/10" : "bg-muted"
+                            systemResourceStatus?.throttled
+                                ? "bg-amber-500/10"
+                                : activeStage ? "bg-primary/10" : "bg-muted"
                         )}>
-                            {activeStage ? (
+                            {systemResourceStatus?.throttled ? (
+                                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                            ) : activeStage ? (
                                 <Loader2 className="h-5 w-5 text-primary animate-spin" />
                             ) : (
                                 <Activity className="h-5 w-5 text-muted-foreground" />
@@ -185,11 +195,14 @@ export function IndexProgressPanel({
                         <div className="min-w-0 flex-1 overflow-hidden">
                             <div className="flex items-center gap-2">
                                 <p className="text-base font-semibold">Index Progress</p>
-                                {activeStage && (
+                                {activeStage && !systemResourceStatus?.throttled && (
                                     <StageBadge stage={activeStage} isActive={true} />
                                 )}
                             </div>
-                            <p className="text-xs text-muted-foreground truncate" title={headerMessage}>{headerMessage}</p>
+                            <p className={cn(
+                                "text-xs truncate",
+                                systemResourceStatus?.throttled ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground"
+                            )} title={headerMessage}>{headerMessage}</p>
                         </div>
                     </div>
 
@@ -197,7 +210,7 @@ export function IndexProgressPanel({
                         <span className="rounded-full border bg-muted px-2.5 py-0.5">
                             {processed}{total ? ` / ${total}` : ''} processed
                         </span>
-                        <span>{pendingCount ? `${pendingCount} queued` : isIndexing ? 'Working…' : 'Idle'}</span>
+                        <span>{pendingCount ? `${pendingCount} queued` : systemResourceStatus?.throttled ? 'Throttled' : isIndexing ? 'Working…' : 'Idle'}</span>
                         {failed ? (
                             <span className="rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 text-destructive">
                                 {failed} failed
@@ -223,6 +236,17 @@ export function IndexProgressPanel({
                             >
                                 <Play className="h-3 w-3" />
                                 Resume
+                            </button>
+                        )}
+                        {/* Override throttle button */}
+                        {systemResourceStatus?.throttled && onThrottleOverride && (
+                            <button
+                                onClick={() => void onThrottleOverride()}
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-amber-600 hover:bg-amber-500/20 transition-colors"
+                                title="Continue indexing for 30 min despite current conditions"
+                            >
+                                <Zap className="h-3 w-3" />
+                                Override
                             </button>
                         )}
                     </div>

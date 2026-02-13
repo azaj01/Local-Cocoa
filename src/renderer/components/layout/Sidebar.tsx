@@ -1,8 +1,9 @@
-import { Plus, MessageSquare, Settings, Database, Puzzle, Trash2, HelpCircle, BarChart3, User } from 'lucide-react';
+import { Plus, MessageSquare, Settings, Database, Puzzle, Trash2, HelpCircle, BarChart3, User, AlertTriangle } from 'lucide-react';
 import { CSSProperties } from 'react';
 import { cn } from '../../lib/utils';
 import { useSkin } from '../skin-provider';
-import type { ChatSession, IndexProgressUpdate } from '../../types';
+import { SystemStatusBar } from '../SystemStatusBar';
+import type { ChatSession, IndexProgressUpdate, SystemResourceStatus } from '../../types';
 
 interface SidebarProps {
     sessions: ChatSession[];
@@ -17,6 +18,7 @@ interface SidebarProps {
     isIndexing?: boolean;
     indexStatus?: IndexProgressUpdate['status'] | null;
     onOpenGuide?: () => void;
+    systemResourceStatus?: SystemResourceStatus | null;
 }
 
 export function Sidebar({
@@ -31,7 +33,8 @@ export function Sidebar({
     onOpenIndexProgress,
     isIndexing = false,
     indexStatus = null,
-    onOpenGuide
+    onOpenGuide,
+    systemResourceStatus = null
 }: SidebarProps) {
     const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
     const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
@@ -166,6 +169,9 @@ export function Sidebar({
                 />
             </div>
             <div className="p-2 space-y-1">
+                {/* System resource status – collapsible, above nav */}
+                <SystemStatusBar status={systemResourceStatus ?? null} defaultCollapsed />
+
                 <button
                     onClick={() => onSelectView('knowledge')}
                     className={cn(
@@ -254,19 +260,41 @@ export function Sidebar({
                         onClick={() => onOpenIndexProgress?.()}
                         className={cn(
                             "mt-1 flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                            "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                            systemResourceStatus?.throttled
+                                ? isCocoaSkin
+                                    ? "text-amber-400 hover:bg-amber-900/30"
+                                    : "text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                         )}
                         title="Open index progress"
                         style={noDragStyle}
                     >
-                        <span className="inline-flex items-center gap-2">
-                            <BarChart3 className="h-3.5 w-3.5" />
-                            {indexStatus === 'failed' ? 'Indexing failed' : indexStatus === 'paused' ? 'Indexing paused' : 'Indexing…'}
+                        <span className="inline-flex items-center gap-2 truncate">
+                            {systemResourceStatus?.throttled ? (
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            ) : (
+                                <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+                            )}
+                            <span className="truncate">
+                                {indexStatus === 'failed'
+                                    ? 'Indexing failed'
+                                    : systemResourceStatus?.throttled
+                                        ? `Paused: ${systemResourceStatus.throttleReason ?? 'System load'}`
+                                        : indexStatus === 'paused'
+                                            ? 'Indexing paused'
+                                            : 'Indexing…'}
+                            </span>
                         </span>
                         <span
                             className={cn(
-                                "h-2 w-2 rounded-full",
-                                indexStatus === 'failed' ? 'bg-destructive' : isIndexing ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'
+                                "h-2 w-2 rounded-full shrink-0",
+                                indexStatus === 'failed'
+                                    ? 'bg-destructive'
+                                    : systemResourceStatus?.throttled
+                                        ? 'bg-amber-500'
+                                        : isIndexing
+                                            ? 'bg-emerald-500 animate-pulse'
+                                            : 'bg-muted-foreground'
                             )}
                         />
                     </button>

@@ -13,6 +13,26 @@ import type {
     SystemSpecs
 } from '../types';
 
+/** Shallow-compare two arrays by element identity. */
+function arraysEqual<T>(a: T[], b: T[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+/** Deep-compare two plain objects/arrays via JSON (for small payloads like progress). */
+function jsonEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return a === b;
+    try {
+        return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+        return false;
+    }
+}
+
 // No limit - use virtual scrolling on the frontend for performance
 const INVENTORY_LIMIT = undefined;
 
@@ -124,6 +144,10 @@ export function useWorkspaceData() {
     const startupRetryCountRef = useRef(0);
     const maxStartupRetries = 30; // Allow up to 30 retries (about 60 seconds with 2s intervals)
     const refreshCountRef = useRef(0); // Track refresh count for skipping expensive queries during indexing
+
+    // ── Hysteresis: require N consecutive idle polls before transitioning isIndexing → false ──
+    const idleStreakRef = useRef(0);
+    const IDLE_HYSTERESIS = 2; // must see 2 consecutive "not running/paused" before declaring idle
 
     const partitionIndexingItems = useCallback(
         (
@@ -241,58 +265,87 @@ export function useWorkspaceData() {
                 startupRetryCountRef.current = 0;
             }
 
-            // OPTIMIZATION: Skip expensive inventory query during active indexing
-            // This query fetches 500 files with full metadata, causing DB contention
-            // Only fetch every 3rd time during indexing to reduce load
+            // OPTIMIZATION: Skip expensive inventory query occasionally during active indexing
+            // This query fetches all files with full metadata, causing DB contention
+            // Skip every 5th poll during indexing to reduce load (but keep queue responsive)
             refreshCountRef.current += 1;
             const isCurrentlyIndexing = healthData.status === 'indexing';
-            const shouldSkipInventory = isCurrentlyIndexing && (refreshCountRef.current % 3 !== 0);
+            const shouldSkipInventory = isCurrentlyIndexing && (refreshCountRef.current % 5 === 0);
             
             console.log('[useWorkspaceData] Fetching data...');
             const [summaryData, folderData, inventoryData, emailData, specsData, stageProgressData] = await Promise.all([
                 api.indexSummary(),
                 api.listFolders().then(f => { console.log('[useWorkspaceData] listFolders returned:', f.length, 'folders'); return f; }),
                 shouldSkipInventory
-                    ? Promise.resolve({ files: files, progress, indexing: [] }) // Return cached data
+                    // FIX: preserve previous indexingItems instead of hardcoding []
+                    // The old code used `indexing: []` which flashed the queue empty on skipped refreshes
+                    ? Promise.resolve(null)
                     : api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {}),
                 api.listEmailAccounts?.() ?? Promise.resolve([]),
                 (api as any).getSystemSpecs ? (api as any).getSystemSpecs() : Promise.resolve(null),
                 (api as any).stageProgress ? (api as any).stageProgress() : Promise.resolve(null)
             ]);
 
-            console.log('[useWorkspaceData] Setting state - folders:', folderData.length, 'files:', inventoryData.files?.length);
+            console.log('[useWorkspaceData] Setting state - folders:', folderData.length, 'files:', inventoryData?.files?.length ?? '(skipped)');
             setHealth(healthData);
-            setSystemSpecs(specsData);
-            setSummary(summaryData);
-            setProgress(inventoryData.progress);
-            setStageProgress(stageProgressData);
-            setIsIndexing(inventoryData.progress?.status === 'running' || inventoryData.progress?.status === 'paused');
+            setSystemSpecs(prev => jsonEqual(prev, specsData) ? prev : specsData);
+            setSummary(prev => jsonEqual(prev, summaryData) ? prev : summaryData);
+            setStageProgress(prev => jsonEqual(prev, stageProgressData) ? prev : stageProgressData);
             setFolders(folderData);
+
+            // ── Hysteresis for isIndexing: prevent bouncing ──
+            const newProgressData = inventoryData ? inventoryData.progress : null;
+            const statusFromHealth = healthData.status === 'indexing';
+            const nowRunning = newProgressData
+                ? (newProgressData.status === 'running' || newProgressData.status === 'paused')
+                : statusFromHealth;
+            if (nowRunning) {
+                idleStreakRef.current = 0;
+                setIsIndexing(true);
+            } else {
+                idleStreakRef.current += 1;
+                if (idleStreakRef.current >= IDLE_HYSTERESIS) {
+                    setIsIndexing(false);
+                }
+                // else: keep previous isIndexing value (don't flash to false)
+            }
+            if (newProgressData) {
+                setProgress(prev => jsonEqual(prev, newProgressData) ? prev : newProgressData);
+            }
 
             const foundNotesFolder = folderData.find((folder: FolderRecord) => normalisePath(folder.path).includes('/.synvo_db/notes'));
             setNoteFolderId(foundNotesFolder ? foundNotesFolder.id : null);
 
-            const folderMap = new Map<string, FolderRecord>(folderData.map((folder: FolderRecord) => [folder.id, folder]));
-            const indexedFiles = inventoryData.files.map((record: FileRecord) => mapIndexedFile(record, folderMap));
-            setFiles(indexedFiles);
+            // Only update files/indexing when we actually fetched inventory (not skipped)
+            if (inventoryData) {
+                const folderMap = new Map<string, FolderRecord>(folderData.map((folder: FolderRecord) => [folder.id, folder]));
+                const indexedFiles = inventoryData.files.map((record: FileRecord) => mapIndexedFile(record, folderMap));
+                setFiles(indexedFiles);
 
-            const resolvedEmailAccounts = Array.isArray(emailData)
-                ? (emailData as EmailAccountSummary[])
-                : [];
-            setEmailAccounts(resolvedEmailAccounts);
+                const resolvedEmailAccounts = Array.isArray(emailData)
+                    ? (emailData as EmailAccountSummary[])
+                    : [];
+                setEmailAccounts(resolvedEmailAccounts);
 
-            const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
-                inventoryData.indexing,
-                folderData,
-                resolvedEmailAccounts
-            );
-            setIndexingItems(generalIndexing);
-            setEmailIndexingByAccount(emailIndexing);
-            setNoteIndexingItems(noteIndexing);
+                const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
+                    inventoryData.indexing,
+                    folderData,
+                    resolvedEmailAccounts
+                );
+                if (generalIndexing.length > 0) {
+                    const active = generalIndexing.find(i => i.status === 'processing');
+                    console.log('[useWorkspaceData] indexingItems:', generalIndexing.length,
+                        'active:', active?.fileName, 'progress:', active?.progress,
+                        'detail:', active?.detail);
+                }
+                setIndexingItems(generalIndexing);
+                setEmailIndexingByAccount(emailIndexing);
+                setNoteIndexingItems(noteIndexing);
+            }
 
             return {
                 folders: folderData,
-                emailAccounts: resolvedEmailAccounts
+                emailAccounts: Array.isArray(emailData) ? (emailData as EmailAccountSummary[]) : []
             };
         } catch (error) {
             console.error('[useWorkspaceData] Error in refreshData:', error);
@@ -314,7 +367,7 @@ export function useWorkspaceData() {
             console.error('Failed to refresh workspace data', error);
             return null;
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- files and progress are intentionally excluded to avoid infinite loops
+     
     }, [partitionIndexingItems, backendStarting]);
 
     const stopPolling = useCallback(() => {
@@ -330,85 +383,115 @@ export function useWorkspaceData() {
 
         stopPolling();
 
+        let consecutiveIdle = 0;
+
         const poll = async () => {
             try {
                 const status = await api.indexStatus();
-                setProgress(status);
+                console.log('[useWorkspaceData] [StatusPoll] status:', status.status);
 
-                // We need current folders and email accounts for partitioning
-                // Since we can't easily access state inside the callback without refs or deps,
-                // we might need to fetch them or rely on the last refresh.
-                // For simplicity in this hook, we'll re-fetch folders/emails if needed or just use what we have if we can.
-                // Actually, let's just fetch inventory and partition.
-
-                if (status.status === 'running') {
+                if (status.status === 'running' || status.status === 'paused') {
+                    consecutiveIdle = 0;
+                    idleStreakRef.current = 0;
                     setIsIndexing(true);
-                    try {
-                        const [inventory, folderData, emailData] = await Promise.all([
-                            api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {}),
-                            api.listFolders(),
-                            api.listEmailAccounts?.() ?? Promise.resolve([])
-                        ]);
+                    setProgress(prev => jsonEqual(prev, status) ? prev : status);
 
-                        const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
-                            inventory.indexing,
-                            folderData,
-                            emailData as EmailAccountSummary[]
-                        );
-                        setIndexingItems(generalIndexing);
-                        setEmailIndexingByAccount(emailIndexing);
-                        setNoteIndexingItems(noteIndexing);
-                        setProgress(inventory.progress);
-                    } catch (inventoryError) {
-                        console.warn('Failed to refresh inventory during indexing', inventoryError);
+                    // Only fetch full inventory every other poll to reduce DB contention
+                    if (status.status === 'running') {
+                        try {
+                            const [inventory, folderData, emailData] = await Promise.all([
+                                api.indexInventory(INVENTORY_LIMIT ? { limit: INVENTORY_LIMIT } : {}),
+                                api.listFolders(),
+                                api.listEmailAccounts?.() ?? Promise.resolve([])
+                            ]);
+
+                            const { generalIndexing, emailIndexing, noteIndexing } = partitionIndexingItems(
+                                inventory.indexing,
+                                folderData,
+                                emailData as EmailAccountSummary[]
+                            );
+
+                            // Log active item progress for debugging
+                            const active = generalIndexing.find(i => i.status === 'processing');
+                            if (active) {
+                                console.log('[useWorkspaceData] [StatusPoll] active:', active.fileName,
+                                    'progress:', active.progress, 'detail:', active.detail,
+                                    'step:', active.stepCurrent, '/', active.stepTotal,
+                                    'events:', active.recentEvents?.length ?? 0);
+                            }
+
+                            setIndexingItems(prev => arraysEqual(prev, generalIndexing) ? prev : generalIndexing);
+                            setEmailIndexingByAccount(emailIndexing);
+                            setNoteIndexingItems(noteIndexing);
+                            setProgress(prev => jsonEqual(prev, inventory.progress) ? prev : inventory.progress);
+                        } catch (inventoryError) {
+                            console.warn('Failed to refresh inventory during indexing', inventoryError);
+                        }
                     }
-                    pollTimerRef.current = window.setTimeout(poll, 1500);
-                } else if (status.status === 'paused') {
-                    setIsIndexing(true);
-                    pollTimerRef.current = window.setTimeout(poll, 1500);
+
+                    pollTimerRef.current = window.setTimeout(poll, 2000);
                 } else {
+                    // Status is idle/completed/failed — apply hysteresis
+                    consecutiveIdle += 1;
+                    if (consecutiveIdle < IDLE_HYSTERESIS) {
+                        // Not enough consecutive idle polls — keep polling, don't flip isIndexing yet
+                        pollTimerRef.current = window.setTimeout(poll, 1500);
+                        return;
+                    }
+
+                    // Confirmed idle — clean up
                     setIndexingItems([]);
                     setEmailIndexingByAccount({});
                     setNoteIndexingItems([]);
                     setIsIndexing(false);
+                    idleStreakRef.current = IDLE_HYSTERESIS;
                     stopPolling();
                     await refreshData();
                 }
             } catch (error) {
                 console.error('Index status polling failed', error);
-                setIsIndexing(false);
-                stopPolling();
+                // Don't immediately flip isIndexing to false on transient errors
+                consecutiveIdle += 1;
+                if (consecutiveIdle >= IDLE_HYSTERESIS + 1) {
+                    setIsIndexing(false);
+                    stopPolling();
+                } else {
+                    pollTimerRef.current = window.setTimeout(poll, 2000);
+                }
             }
         };
 
-        // OPTIMIZATION: Reduce polling frequency during indexing to avoid DB lock contention
-        // Previous: 1500ms caused too many requests competing with indexing I/O
-        pollTimerRef.current = window.setTimeout(poll, 3000);
+        pollTimerRef.current = window.setTimeout(poll, 2000);
     }, [partitionIndexingItems, refreshData, stopPolling]);
 
     useEffect(() => {
-        void refreshData();
+        // Schedule initial load asynchronously to avoid synchronous setState in effect body
+        const handle = window.setTimeout(() => void refreshData(), 0);
         return () => {
+            window.clearTimeout(handle);
             stopPolling();
         };
     }, [refreshData, stopPolling]);
 
     useEffect(() => {
         // Use shorter interval during startup to detect backend readiness faster
-        // OPTIMIZATION: Increase interval during normal operation to reduce DB contention
-        // Previous: 5000ms was still causing significant overhead during bulk indexing
-        const interval = backendStarting ? 2000 : 8000;
+        // OPTIMIZATION: During active indexing, the status poll loop handles frequent updates
+        // so we use a moderate background refresh. 8s normal, 5s when indexing (as fallback).
+        const interval = backendStarting ? 2000 : (isIndexing ? 5000 : 8000);
         const intervalId = window.setInterval(() => {
             void refreshData();
         }, interval);
         return () => window.clearInterval(intervalId);
-    }, [refreshData, backendStarting]);
+    }, [refreshData, backendStarting, isIndexing]);
 
     useEffect(() => {
-        if (progress?.status === 'running' && pollTimerRef.current === null) {
+        // Start the fast status poll when either progress or health indicates indexing
+        const isRunning = progress?.status === 'running' || progress?.status === 'paused';
+        const healthSaysIndexing = health?.status === 'indexing';
+        if ((isRunning || healthSaysIndexing) && pollTimerRef.current === null) {
             scheduleStatusPoll();
         }
-    }, [progress?.status, scheduleStatusPoll]);
+    }, [progress?.status, health?.status, scheduleStatusPoll]);
 
     const snapshot = useMemo(() => buildSnapshot(files, summary), [files, summary]);
     const fileMap = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);

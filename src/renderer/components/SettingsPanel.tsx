@@ -1,4 +1,4 @@
-import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle, BarChart3, Sparkles, Battery, Zap, Gauge } from 'lucide-react';
+import { Moon, Sun, Monitor, Activity, Database, Cpu, Settings as SettingsIcon, CheckCircle2, Download, Box, RotateCcw, Check, AlertCircle, Shield, Trash2, Plus, Copy, HardDrive, Folder, Cloud, X, Settings2, ChevronRight, FileDown, Loader2, Bug, Brain, Power, PlayCircle, BarChart3, Sparkles, Battery, Zap, Gauge, Thermometer } from 'lucide-react';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { CSSProperties, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { useSkin, AVAILABLE_SKINS } from './skin-provider';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { useModelConfig } from '../hooks/useModelConfig';
 import { useModelStatus } from '../hooks/useModelStatus';
+import { useSystemStatus } from '../hooks/useSystemStatus';
 import { cn } from '../lib/utils';
 import type { ModelAssetStatus, ApiKey, ScanDirectory, ScanScope, ScanMode } from '../types';
 import cocoaMascot from '../assets/cocoa-mascot.png';
@@ -358,6 +359,7 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     const { health, systemSpecs } = useWorkspaceData();
     const { config, loading: configLoading, updateConfig } = useModelConfig();
     const { modelStatus, handleRedownloadModel, modelDownloadEvent, runtimeStatus, presets, loadPresets, applyPreset, selectedPreset, loadRecommendedPreset, handleDownloadSelectedModels } = useModelStatus();
+    const { status: liveSystemStatus } = useSystemStatus();
 
     // Load presets on mount
     useEffect(() => {
@@ -438,6 +440,17 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
     const [activeTab, setActiveTab] = useState<'general' | 'models' | 'retrieval' | 'memory' | 'security' | 'scan'>(initialTab);
     const [pythonSettings, setPythonSettings] = useState<PythonSettings | null>(null);
 
+    // Throttle config state
+    const [throttleConfig, setThrottleConfig] = useState<{
+        enabled: boolean;
+        cpu_max_percent: number;
+        memory_min_available_gb: number;
+        memory_max_percent: number;
+        gpu_max_percent: number;
+        on_battery_pause: boolean;
+        cooldown_seconds: number;
+    } | null>(null);
+
     // Listen for tab switch requests (e.g., from Scan page)
     useEffect(() => {
         const handleTabSwitch = (event: Event) => {
@@ -499,6 +512,11 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
             .then(res => res.json())
             .then(data => setApiKeys(data))
             .catch(err => console.error('Failed to load keys:', err));
+
+        fetch('http://127.0.0.1:8890/system/throttle-config', { headers: { 'X-API-Key': key } })
+            .then(res => res.json())
+            .then(data => setThrottleConfig(data))
+            .catch(err => console.error('Failed to load throttle config:', err));
     }, []);
 
     useEffect(() => {
@@ -665,6 +683,23 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                 setTimeout(() => setShowSaveSuccess(false), 2000);
             })
             .catch(err => console.error('Failed to save settings:', err));
+    };
+
+    const updateThrottleSetting = (key: string, value: any) => {
+        if (!throttleConfig || !localKey) return;
+        const newConfig = { ...throttleConfig, [key]: value };
+        setThrottleConfig(newConfig);
+
+        fetch('http://127.0.0.1:8890/system/throttle-config', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': localKey },
+            body: JSON.stringify({ [key]: value }),
+        })
+            .then(() => {
+                setShowSaveSuccess(true);
+                setTimeout(() => setShowSaveSuccess(false), 2000);
+            })
+            .catch(err => console.error('Failed to save throttle config:', err));
     };
 
     const createApiKey = () => {
@@ -1513,6 +1548,256 @@ export function SettingsPanel({ initialTab = 'general' }: SettingsPanelProps) {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* System Resource Throttle */}
+                            {throttleConfig && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <h3 className="text-sm font-medium flex items-center gap-2">
+                                            <Thermometer className="h-4 w-4" />
+                                            Indexing Throttle
+                                        </h3>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Automatically pause embedding and deep indexing when your system is under heavy load or on battery
+                                        </p>
+                                    </div>
+
+                                    {/* Live throttle status banner */}
+                                    {liveSystemStatus?.throttled && (
+                                        <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400">
+                                            <AlertCircle className="h-4 w-4 shrink-0" />
+                                            <span>Indexing paused: {liveSystemStatus.throttleReason ?? 'System under load'}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Live system metrics summary */}
+                                    {liveSystemStatus && (
+                                        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Real-time System Status</p>
+                                            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <Cpu className="h-3 w-3" />
+                                                        <span>CPU</span>
+                                                        <span className="text-[10px] text-muted-foreground">({liveSystemStatus.cpuCoreCount} cores)</span>
+                                                    </span>
+                                                    <span className={cn(
+                                                        "font-mono font-medium",
+                                                        throttleConfig.enabled && (liveSystemStatus.cpuPercent - liveSystemStatus.llamaCpuPercent) > throttleConfig.cpu_max_percent
+                                                            ? "text-destructive" : ""
+                                                    )}>
+                                                        {Math.max(0, liveSystemStatus.cpuPercent - liveSystemStatus.llamaCpuPercent).toFixed(0)}%
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <HardDrive className="h-3 w-3" />
+                                                        <span>Memory</span>
+                                                    </span>
+                                                    <span className={cn(
+                                                        "font-mono font-medium",
+                                                        throttleConfig.enabled && liveSystemStatus.memoryPercent > throttleConfig.memory_max_percent
+                                                            ? "text-destructive" : ""
+                                                    )}>
+                                                        {liveSystemStatus.memoryPercent.toFixed(0)}% ({liveSystemStatus.memoryAvailableGb.toFixed(1)} GB free)
+                                                    </span>
+                                                </div>
+                                                {liveSystemStatus.gpuPercent !== null && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <Gauge className="h-3 w-3" />
+                                                            <span>GPU</span>
+                                                        </span>
+                                                        <span className={cn(
+                                                            "font-mono font-medium",
+                                                            throttleConfig.enabled && liveSystemStatus.gpuPercent > throttleConfig.gpu_max_percent
+                                                                ? "text-destructive" : ""
+                                                        )}>
+                                                            {liveSystemStatus.gpuPercent.toFixed(0)}%
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {liveSystemStatus.batteryPercent !== null && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <Battery className="h-3 w-3" />
+                                                            <span>Battery</span>
+                                                        </span>
+                                                        <span className={cn(
+                                                            "font-mono font-medium",
+                                                            throttleConfig.enabled && throttleConfig.on_battery_pause && liveSystemStatus.onBattery
+                                                                ? "text-amber-600 dark:text-amber-400" : ""
+                                                        )}>
+                                                            {liveSystemStatus.batteryPercent.toFixed(0)}%
+                                                            {liveSystemStatus.onBattery ? ' (battery)' : ' (plugged in)'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="rounded-lg border bg-card p-4 space-y-5">
+                                        {/* Master toggle */}
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-sm font-medium">Enable auto-throttle</label>
+                                            <button
+                                                onClick={() => updateThrottleSetting('enabled', !throttleConfig.enabled)}
+                                                className={cn(
+                                                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                                                    throttleConfig.enabled ? 'bg-primary' : 'bg-secondary'
+                                                )}
+                                            >
+                                                <span className={cn(
+                                                    'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                                                    throttleConfig.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                                                )} />
+                                            </button>
+                                        </div>
+
+                                        {throttleConfig.enabled && (
+                                            <>
+                                                {/* Pause on battery */}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <Battery className="h-3.5 w-3.5 text-muted-foreground" />
+                                                        <label className="text-sm">Pause on battery</label>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => updateThrottleSetting('on_battery_pause', !throttleConfig.on_battery_pause)}
+                                                        className={cn(
+                                                            'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                                                            throttleConfig.on_battery_pause ? 'bg-primary' : 'bg-secondary'
+                                                        )}
+                                                    >
+                                                        <span className={cn(
+                                                            'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                                                            throttleConfig.on_battery_pause ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                                                        )} />
+                                                    </button>
+                                                </div>
+
+                                                {/* CPU threshold */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm">Max CPU usage</label>
+                                                        <div className="flex items-center gap-2">
+                                                            {liveSystemStatus && (
+                                                                <span className={cn(
+                                                                    "text-[10px] tabular-nums",
+                                                                    (liveSystemStatus.cpuPercent - liveSystemStatus.llamaCpuPercent) > throttleConfig.cpu_max_percent
+                                                                        ? "text-destructive font-medium" : "text-muted-foreground"
+                                                                )}>
+                                                                    now {Math.max(0, liveSystemStatus.cpuPercent - liveSystemStatus.llamaCpuPercent).toFixed(0)}%
+                                                                </span>
+                                                            )}
+                                                            <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{throttleConfig.cpu_max_percent}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="50" max="95" step="5"
+                                                        value={throttleConfig.cpu_max_percent}
+                                                        onChange={(e) => updateThrottleSetting('cpu_max_percent', parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                    />
+                                                </div>
+
+                                                {/* Memory threshold */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm">Max memory usage</label>
+                                                        <div className="flex items-center gap-2">
+                                                            {liveSystemStatus && (
+                                                                <span className={cn(
+                                                                    "text-[10px] tabular-nums",
+                                                                    liveSystemStatus.memoryPercent > throttleConfig.memory_max_percent
+                                                                        ? "text-destructive font-medium" : "text-muted-foreground"
+                                                                )}>
+                                                                    now {liveSystemStatus.memoryPercent.toFixed(0)}%
+                                                                </span>
+                                                            )}
+                                                            <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{throttleConfig.memory_max_percent}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="60" max="98" step="2"
+                                                        value={throttleConfig.memory_max_percent}
+                                                        onChange={(e) => updateThrottleSetting('memory_max_percent', parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                    />
+                                                </div>
+
+                                                {/* Min available RAM */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm">Min available RAM</label>
+                                                        <div className="flex items-center gap-2">
+                                                            {liveSystemStatus && (
+                                                                <span className={cn(
+                                                                    "text-[10px] tabular-nums",
+                                                                    liveSystemStatus.memoryAvailableGb < throttleConfig.memory_min_available_gb
+                                                                        ? "text-destructive font-medium" : "text-muted-foreground"
+                                                                )}>
+                                                                    now {liveSystemStatus.memoryAvailableGb.toFixed(1)} GB
+                                                                </span>
+                                                            )}
+                                                            <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{throttleConfig.memory_min_available_gb} GB</span>
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="1" max="8" step="0.5"
+                                                        value={throttleConfig.memory_min_available_gb}
+                                                        onChange={(e) => updateThrottleSetting('memory_min_available_gb', parseFloat(e.target.value))}
+                                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                    />
+                                                </div>
+
+                                                {/* GPU threshold */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm">Max GPU usage</label>
+                                                        <div className="flex items-center gap-2">
+                                                            {liveSystemStatus?.gpuPercent !== null && liveSystemStatus?.gpuPercent !== undefined && (
+                                                                <span className={cn(
+                                                                    "text-[10px] tabular-nums",
+                                                                    liveSystemStatus.gpuPercent > throttleConfig.gpu_max_percent
+                                                                        ? "text-destructive font-medium" : "text-muted-foreground"
+                                                                )}>
+                                                                    now {liveSystemStatus.gpuPercent.toFixed(0)}%
+                                                                </span>
+                                                            )}
+                                                            <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{throttleConfig.gpu_max_percent}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="50" max="95" step="5"
+                                                        value={throttleConfig.gpu_max_percent}
+                                                        onChange={(e) => updateThrottleSetting('gpu_max_percent', parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                    />
+                                                </div>
+
+                                                {/* Cooldown */}
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-sm">Resume cooldown</label>
+                                                        <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{throttleConfig.cooldown_seconds}s</span>
+                                                    </div>
+                                                    <input
+                                                        type="range" min="10" max="120" step="10"
+                                                        value={throttleConfig.cooldown_seconds}
+                                                        onChange={(e) => updateThrottleSetting('cooldown_seconds', parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Seconds to wait after conditions clear before resuming indexing
+                                                    </p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {showSaveSuccess && (
                                 <div className="flex items-center gap-2 text-sm text-emerald-600 animate-in fade-in duration-200">

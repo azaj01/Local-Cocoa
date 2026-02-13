@@ -47,6 +47,7 @@ export type {
     IndexScope,
     RunIndexOptions,
     SystemSpecs,
+    SystemResourceStatus,
     ApiKey,
     ThinkingStep,
     ThinkingStepStatus,

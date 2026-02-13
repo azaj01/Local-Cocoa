@@ -40,7 +40,7 @@ export interface FolderRecord {
     privacyLevel?: PrivacyLevel;
 }
 
-export interface MonitoredFolder extends FolderRecord { }
+export type MonitoredFolder = FolderRecord;
 
 export interface FileRecord {
     id: string;
@@ -593,6 +593,23 @@ export interface SystemSpecs {
     platform: string;
     arch: string;
     cpus: number;
+}
+
+export interface SystemResourceStatus {
+    cpuPercent: number;
+    cpuCoreCount: number;
+    gpuPercent: number | null;
+    gpuMemoryPercent: number | null;
+    memoryPercent: number;
+    memoryUsedGb: number;
+    memoryTotalGb: number;
+    memoryAvailableGb: number;
+    onBattery: boolean;
+    batteryPercent: number | null;
+    llamaCpuPercent: number;
+    llamaMemoryMb: number;
+    throttled: boolean;
+    throttleReason: string | null;
 }
 
 export interface ApiKey {
