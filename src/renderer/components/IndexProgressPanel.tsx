@@ -3,6 +3,7 @@ import { Activity, FileText, Image as ImageIcon, Video, Music, X, Pause, Play, C
 import { cn } from '../lib/utils';
 import type { IndexProgressUpdate, IndexingItem, SystemResourceStatus } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { EtaEstimate } from '../hooks/useEtaEstimator';
 
 function basename(pathValue: string): string {
     const parts = (pathValue ?? '').split(/[/\\]/).filter(Boolean);
@@ -35,34 +36,34 @@ function extractPageLabel(text?: string | null): string | null {
 }
 
 // Stage badge component
-function StageBadge({ 
-    stage, 
-    isActive 
-}: { 
+function StageBadge({
+    stage,
+    isActive
+}: {
     stage: 'keyword' | 'semantic' | 'vision';
     isActive: boolean;
 }) {
     const config = {
-        keyword: { 
-            icon: Search, 
-            label: 'Keyword', 
-            color: 'text-emerald-500', 
-            bg: 'bg-emerald-500/10', 
-            border: 'border-emerald-500/30' 
+        keyword: {
+            icon: Search,
+            label: 'Keyword',
+            color: 'text-emerald-500',
+            bg: 'bg-emerald-500/10',
+            border: 'border-emerald-500/30'
         },
-        semantic: { 
-            icon: Brain, 
-            label: 'Semantic', 
-            color: 'text-blue-500', 
-            bg: 'bg-blue-500/10', 
-            border: 'border-blue-500/30' 
+        semantic: {
+            icon: Brain,
+            label: 'Semantic',
+            color: 'text-blue-500',
+            bg: 'bg-blue-500/10',
+            border: 'border-blue-500/30'
         },
-        vision: { 
-            icon: Eye, 
-            label: 'Vision', 
-            color: 'text-purple-500', 
-            bg: 'bg-purple-500/10', 
-            border: 'border-purple-500/30' 
+        vision: {
+            icon: Eye,
+            label: 'Vision',
+            color: 'text-purple-500',
+            bg: 'bg-purple-500/10',
+            border: 'border-purple-500/30'
         },
     }[stage];
 
@@ -96,6 +97,7 @@ export function IndexProgressPanel({
     onResumeIndexing,
     systemResourceStatus = null,
     onThrottleOverride,
+    etaEstimate = null,
 }: {
     isIndexing: boolean;
     progress: IndexProgressUpdate | null;
@@ -106,6 +108,8 @@ export function IndexProgressPanel({
     onResumeIndexing?: () => void;
     systemResourceStatus?: SystemResourceStatus | null;
     onThrottleOverride?: () => Promise<void>;
+    /** ETA estimates for stages and current file */
+    etaEstimate?: EtaEstimate | null;
 }) {
     const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
     const processing = indexingItems.find((item) => item.status === 'processing') ?? null;
@@ -115,11 +119,11 @@ export function IndexProgressPanel({
     // Determine current active stage from stageProgress
     const activeStage = useMemo(() => {
         if (!stageProgress || stageProgress.total === 0) return null;
-        
+
         const textPercent = clampPercent(stageProgress.fast_text.percent);
         const embedPercent = clampPercent(stageProgress.fast_embed.percent);
         const deepPercent = clampPercent(stageProgress.deep.percent);
-        
+
         // Check which stage is actively running
         if (textPercent < 100) return 'keyword';
         if (stageProgress.semantic_enabled && embedPercent < 100) return 'semantic';
@@ -130,7 +134,7 @@ export function IndexProgressPanel({
     // Get stage-specific progress info
     const stageInfo = useMemo(() => {
         if (!stageProgress || !activeStage) return null;
-        
+
         const stages = {
             keyword: {
                 done: stageProgress.fast_text.done,
@@ -202,7 +206,14 @@ export function IndexProgressPanel({
                             <p className={cn(
                                 "text-xs truncate",
                                 systemResourceStatus?.throttled ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground"
-                            )} title={headerMessage}>{headerMessage}</p>
+                            )} title={headerMessage}>
+                                {headerMessage}
+                                {etaEstimate?.active?.label && !systemResourceStatus?.throttled && (
+                                    <span className="ml-2 text-muted-foreground/70 tabular-nums">
+                                        — {etaEstimate.active.label}
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
 
@@ -216,7 +227,7 @@ export function IndexProgressPanel({
                                 {failed} failed
                             </span>
                         ) : null}
-                        
+
                         {/* Pause/Resume Button */}
                         {isIndexing && progress?.status === 'running' && onPauseIndexing && (
                             <button
@@ -283,7 +294,7 @@ export function IndexProgressPanel({
                                     activeStage === 'semantic' && "bg-blue-500",
                                     activeStage === 'vision' && "bg-purple-500"
                                 )}
-                                style={{ 
+                                style={{
                                     width: `${stageInfo.percent}%`,
                                     animation: stageInfo.percent < 100 ? 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' : 'none'
                                 }}
@@ -305,7 +316,14 @@ export function IndexProgressPanel({
                                     activeStage === 'vision' && "bg-purple-500"
                                 )} />
                             </span>
-                            <span>Processing files...</span>
+                            <span>
+                                Processing files…
+                                {etaEstimate?.active?.label && (
+                                    <span className="ml-1 tabular-nums text-muted-foreground/70">
+                                        — {etaEstimate.active.label}
+                                    </span>
+                                )}
+                            </span>
                         </div>
                     </div>
                 )}
@@ -337,10 +355,15 @@ export function IndexProgressPanel({
                                         ) : null}
                                     </p>
                                 </div>
-                                <div className="text-xs text-muted-foreground shrink-0">
+                                <div className="text-xs text-muted-foreground shrink-0 text-right">
                                     <span className="rounded-full border bg-muted px-2.5 py-0.5">
                                         {clampPercent(processing.progress)}%
                                     </span>
+                                    {etaEstimate?.fileEtaLabel && (
+                                        <p className="text-[10px] text-muted-foreground/70 mt-1 tabular-nums">
+                                            {etaEstimate.fileEtaLabel}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
@@ -453,7 +476,7 @@ export function IndexProgressPanel({
                                             {clampPercent(item.progress)}%
                                         </span>
                                     ) : null}
-                                    
+
                                     {/* Remove from queue button - only for pending items */}
                                     {item.status === 'pending' && onRemoveItem && (
                                         <button

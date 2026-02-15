@@ -19,6 +19,8 @@ interface SidebarProps {
     indexStatus?: IndexProgressUpdate['status'] | null;
     onOpenGuide?: () => void;
     systemResourceStatus?: SystemResourceStatus | null;
+    /** ETA label from useEtaEstimator (e.g. "~3 min") */
+    etaLabel?: string | null;
 }
 
 export function Sidebar({
@@ -34,7 +36,8 @@ export function Sidebar({
     isIndexing = false,
     indexStatus = null,
     onOpenGuide,
-    systemResourceStatus = null
+    systemResourceStatus = null,
+    etaLabel = null,
 }: SidebarProps) {
     const dragStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
     const noDragStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties;
@@ -170,7 +173,7 @@ export function Sidebar({
             </div>
             <div className="p-2 space-y-1">
                 {/* System resource status – collapsible, above nav */}
-                <SystemStatusBar status={systemResourceStatus ?? null} defaultCollapsed />
+                <SystemStatusBar status={systemResourceStatus ?? null} defaultCollapsed etaLabel={etaLabel} />
 
                 <button
                     onClick={() => onSelectView('knowledge')}
@@ -269,25 +272,32 @@ export function Sidebar({
                         title="Open index progress"
                         style={noDragStyle}
                     >
-                        <span className="inline-flex items-center gap-2 truncate">
+                        <span className="inline-flex items-center gap-2 min-w-0 flex-1">
                             {systemResourceStatus?.throttled ? (
                                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                             ) : (
                                 <BarChart3 className="h-3.5 w-3.5 shrink-0" />
                             )}
-                            <span className="truncate">
-                                {indexStatus === 'failed'
-                                    ? 'Indexing failed'
-                                    : systemResourceStatus?.throttled
-                                        ? `Paused: ${systemResourceStatus.throttleReason ?? 'System load'}`
-                                        : indexStatus === 'paused'
-                                            ? 'Indexing paused'
-                                            : 'Indexing…'}
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate">
+                                    {indexStatus === 'failed'
+                                        ? 'Indexing failed'
+                                        : systemResourceStatus?.throttled
+                                            ? `Paused: ${systemResourceStatus.throttleReason ?? 'System load'}`
+                                            : indexStatus === 'paused'
+                                                ? 'Indexing paused'
+                                                : 'Indexing…'}
+                                </span>
+                                {etaLabel && isIndexing && !systemResourceStatus?.throttled && indexStatus !== 'failed' && (
+                                    <span className="block text-[10px] font-normal text-muted-foreground/70 tabular-nums truncate">
+                                        {etaLabel} remaining
+                                    </span>
+                                )}
                             </span>
                         </span>
                         <span
                             className={cn(
-                                "h-2 w-2 rounded-full shrink-0",
+                                "h-2 w-2 rounded-full shrink-0 ml-2",
                                 indexStatus === 'failed'
                                     ? 'bg-destructive'
                                     : systemResourceStatus?.throttled

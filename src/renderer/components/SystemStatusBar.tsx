@@ -8,6 +8,8 @@ interface SystemStatusBarProps {
     status: SystemResourceStatus | null;
     /** Start collapsed (default true – hidden by default) */
     defaultCollapsed?: boolean;
+    /** ETA label from useEtaEstimator (e.g. "~3 min") */
+    etaLabel?: string | null;
 }
 
 /** Tiny horizontal bar showing a percentage fill. */
@@ -33,7 +35,7 @@ function barColor(pct: number): string {
  * Collapsible system status strip rendered just above the sidebar nav items.
  * Default: collapsed (shows a compact one-liner). Click to expand full metrics.
  */
-export function SystemStatusBar({ status, defaultCollapsed = true }: SystemStatusBarProps) {
+export function SystemStatusBar({ status, defaultCollapsed = true, etaLabel }: SystemStatusBarProps) {
     const { skin } = useSkin();
     const isCocoaSkin = skin === 'local-cocoa';
     const [collapsed, setCollapsed] = useState(defaultCollapsed);
@@ -67,6 +69,7 @@ export function SystemStatusBar({ status, defaultCollapsed = true }: SystemStatu
                     <span className="truncate tabular-nums">
                         CPU {effectiveCpu.toFixed(0)}% · MEM {status.memoryPercent.toFixed(0)}%
                         {hasGpu ? ` · GPU ${status.gpuPercent!.toFixed(0)}%` : ''}
+                        {etaLabel ? ` · ${etaLabel}` : ''}
                     </span>
                 )}
                 <ChevronDown className="h-2.5 w-2.5 ml-auto shrink-0" />

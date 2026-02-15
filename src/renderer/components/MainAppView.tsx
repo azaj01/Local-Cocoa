@@ -16,6 +16,7 @@ import { useChatSession } from '../hooks/useChatSession';
 import { useModelStatus } from '../hooks/useModelStatus';
 import { useModelConfig } from '../hooks/useModelConfig';
 import { useSystemStatus } from '../hooks/useSystemStatus';
+import { useEtaEstimator } from '../hooks/useEtaEstimator';
 import type {
     IndexedFile,
     SearchHit
@@ -95,6 +96,14 @@ export function MainAppView() {
     const { config } = useModelConfig();
     const { status: systemResourceStatus } = useSystemStatus();
     const showBenchmarkViewer = config?.showBenchmarkViewer ?? false;
+
+    // ETA estimation — derive pause state and processing item
+    const isPausedForEta = !!(systemResourceStatus?.throttled || progress?.status === 'paused');
+    const processingItemForEta = useMemo(
+        () => indexingItems.find(i => i.status === 'processing') ?? null,
+        [indexingItems],
+    );
+    const etaEstimate = useEtaEstimator(stageProgress ?? null, isIndexing, isPausedForEta, processingItemForEta);
 
     const previousIsIndexingRef = useRef<boolean>(false);
     useEffect(() => {
@@ -552,6 +561,7 @@ export function MainAppView() {
                             indexStatus={progress?.status ?? null}
                             onOpenGuide={handleOpenGuide}
                             systemResourceStatus={systemResourceStatus}
+                            etaLabel={etaEstimate.active?.label ?? null}
                         />
                     }
                     rightPanel={
@@ -576,6 +586,7 @@ export function MainAppView() {
                                 onResumeIndexing={handleResumeIndexing}
                                 systemResourceStatus={systemResourceStatus}
                                 onThrottleOverride={handleThrottleOverride}
+                                etaEstimate={etaEstimate}
                             />
                         ) : null
                     }
@@ -637,6 +648,7 @@ export function MainAppView() {
                             onStartDeep={startDeepIndexing}
                             onStopDeep={stopDeepIndexing}
                             onThrottleOverride={handleThrottleOverride}
+                            stageEtas={etaEstimate.stages}
                             onAddFolder={handleAddFolder}
                             onAddFile={handleAddFile}
                             onRemoveFolder={handleRemoveFolder}

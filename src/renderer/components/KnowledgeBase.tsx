@@ -14,6 +14,7 @@ import type {
     SystemResourceStatus,
 } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { StageEta } from '../hooks/useEtaEstimator';
 
 interface KnowledgeBaseProps {
     folders: FolderRecord[];
@@ -22,7 +23,7 @@ interface KnowledgeBaseProps {
     snapshot: IndexResultSnapshot | null;
     isIndexing: boolean;
     indexProgress?: IndexProgressUpdate | null;
-    
+
     // Staged indexing progress
     stageProgress?: StagedIndexProgress | null;
     systemResourceStatus?: SystemResourceStatus | null;
@@ -31,6 +32,8 @@ interface KnowledgeBaseProps {
     onStartDeep?: () => Promise<void>;
     onStopDeep?: () => Promise<void>;
     onThrottleOverride?: () => Promise<void>;
+    /** Per-stage ETA from useEtaEstimator */
+    stageEtas?: Record<string, StageEta> | null;
 
     // Folder actions
     onAddFolder: () => Promise<void>;
@@ -44,7 +47,7 @@ interface KnowledgeBaseProps {
     onSelectFile: (file: IndexedFile) => void;
     onOpenFile?: (file: IndexedFile) => void | Promise<void>;
     onAskAboutFile: (file: IndexedFile) => Promise<void>;
-    
+
     // Data refresh
     onRefresh?: () => void | Promise<void>;
 }
@@ -65,6 +68,7 @@ export function KnowledgeBase({
     onStartDeep,
     onStopDeep,
     onThrottleOverride,
+    stageEtas,
     onAddFolder,
     onAddFile,
     onRemoveFolder,
@@ -146,7 +150,7 @@ export function KnowledgeBase({
                                 </button>
                             </div>
                         )}
-                        
+
                         {/* Back button for scan view */}
                         {activeView === 'scan' && (
                             <button
@@ -193,9 +197,10 @@ export function KnowledgeBase({
                                     onStopDeep={onStopDeep}
                                     systemResourceStatus={systemResourceStatus}
                                     onThrottleOverride={onThrottleOverride}
+                                    stageEtas={stageEtas}
                                 />
                             )}
-                            
+
                             {/* Files Panel */}
                             <div className="flex-1 min-h-0 overflow-hidden">
                                 <IndexedFilesPanel
