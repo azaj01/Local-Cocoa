@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { createWriteStream } from 'fs';
 import archiver from 'archiver';
-import { getHealth, getLocalKey } from '../backendClient';
+import { getHealth, getLocalKey, getSystemResourceStatus, activateThrottleOverride, cancelThrottleOverride, getThrottleOverrideStatus } from '../backendClient';
 import { WindowManager } from '../windowManager';
 import { getLogsDirectory } from '../logger';
 import { config } from '../config';
@@ -108,6 +108,22 @@ export function registerSystemHandlers(windowManager: WindowManager) {
             arch: os.arch(),
             cpus: os.cpus().length
         };
+    });
+
+    ipcMain.handle('system:resource-status', async () => {
+        return getSystemResourceStatus();
+    });
+
+    ipcMain.handle('system:throttle-override', async (_event, durationMinutes?: number) => {
+        return activateThrottleOverride(durationMinutes ?? 30);
+    });
+
+    ipcMain.handle('system:throttle-override-cancel', async () => {
+        return cancelThrottleOverride();
+    });
+
+    ipcMain.handle('system:throttle-override-status', async () => {
+        return getThrottleOverrideStatus();
     });
 
     ipcMain.handle('spotlight:show', async () => {

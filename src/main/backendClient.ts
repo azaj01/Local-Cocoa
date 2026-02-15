@@ -854,7 +854,6 @@ export async function searchFilesStream(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
@@ -936,7 +935,6 @@ export async function askWorkspaceStream(
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-
 
         while (true) {
             const { done, value } = await reader.read();
@@ -1294,7 +1292,6 @@ export async function streamBasicProfile(
         const decoder = new TextDecoder();
         let buffer = '';
 
-
         while (true) {
             const { done, value } = await reader.read();
 
@@ -1589,4 +1586,57 @@ export interface BackendSettings {
  */
 export async function getBackendSettings(): Promise<BackendSettings> {
     return requestJson<BackendSettings>('/settings');
+}
+
+// ========================================
+// System Resource Status
+// ========================================
+
+export interface SystemResourceStatus {
+    cpu_percent: number;
+    cpu_core_count: number;
+    gpu_percent: number | null;
+    gpu_memory_percent: number | null;
+    memory_percent: number;
+    memory_used_gb: number;
+    memory_total_gb: number;
+    memory_available_gb: number;
+    on_battery: boolean;
+    battery_percent: number | null;
+    llama_cpu_percent: number;
+    llama_memory_mb: number;
+    throttled: boolean;
+    throttle_reason: string | null;
+}
+
+/**
+ * Get current system resource utilisation (CPU/GPU/RAM/battery + throttle state)
+ */
+export async function getSystemResourceStatus(): Promise<SystemResourceStatus> {
+    return requestJson<SystemResourceStatus>('/system/status', { method: 'GET' });
+}
+
+// Throttle override
+export interface ThrottleOverrideStatus {
+    active: boolean;
+    remaining_seconds: number;
+}
+
+/**
+ * Temporarily bypass auto-throttle so indexing can continue despite battery / high load.
+ */
+export async function activateThrottleOverride(durationMinutes: number = 30): Promise<ThrottleOverrideStatus> {
+    return requestJson<ThrottleOverrideStatus>('/system/throttle-override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration_minutes: durationMinutes }),
+    });
+}
+
+export async function cancelThrottleOverride(): Promise<ThrottleOverrideStatus> {
+    return requestJson<ThrottleOverrideStatus>('/system/throttle-override', { method: 'DELETE' });
+}
+
+export async function getThrottleOverrideStatus(): Promise<ThrottleOverrideStatus> {
+    return requestJson<ThrottleOverrideStatus>('/system/throttle-override', { method: 'GET' });
 }

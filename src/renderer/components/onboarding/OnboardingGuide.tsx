@@ -43,7 +43,7 @@ export function OnboardingGuide({
 
     useEffect(() => {
         if (isOpen) {
-            setCurrentStep(0);
+            setTimeout(() => setCurrentStep(0), 0);
         }
     }, [isOpen]);
 

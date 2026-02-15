@@ -45,14 +45,18 @@ export function NotesWorkspace({
 
     useEffect(() => {
         if (!selectedNote) {
-            setLocalTitle('');
-            setLocalBody('');
-            setMode('preview');
+            setTimeout(() => {
+                setLocalTitle('');
+                setLocalBody('');
+                setMode('preview');
+            }, 0);
             return;
         }
-        setLocalTitle(selectedNote.title);
-        setLocalBody(selectedNote.markdown);
-        setMode('preview');
+        setTimeout(() => {
+            setLocalTitle(selectedNote.title);
+            setLocalBody(selectedNote.markdown);
+            setMode('preview');
+        }, 0);
     }, [selectedNote]);
 
     const selectedSummary = useMemo(() => notes.find((note) => note.id === selectedNoteId) ?? null, [notes, selectedNoteId]);

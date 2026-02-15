@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { X, FileText, ExternalLink, Activity, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Shield, ShieldOff, Maximize2, Loader2, Scan } from 'lucide-react';
-import type { IndexedFile, SearchHit, IndexProgressUpdate, IndexingItem, PrivacyLevel } from '../../types';
+import type { IndexedFile, SearchHit, IndexProgressUpdate, IndexingItem, PrivacyLevel, SystemResourceStatus } from '../../types';
 import type { StagedIndexProgress } from '../../../electron/backendClient';
+import type { EtaEstimate } from '../../hooks/useEtaEstimator';
 import { IndexProgressPanel } from '../IndexProgressPanel';
 
 interface RightPanelProps {
@@ -19,11 +20,16 @@ interface RightPanelProps {
     indexingItems?: IndexingItem[];
     stageProgress?: StagedIndexProgress | null;
     onCloseIndexing?: () => void;
-    
+
     // Queue management
     onRemoveFromQueue?: (filePath: string) => void;
     onPauseIndexing?: () => void;
     onResumeIndexing?: () => void;
+    // Throttle status
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
+    /** ETA estimates for stages and current file */
+    etaEstimate?: EtaEstimate | null;
 }
 
 export function RightPanel({
@@ -41,6 +47,9 @@ export function RightPanel({
     onRemoveFromQueue,
     onPauseIndexing,
     onResumeIndexing,
+    systemResourceStatus = null,
+    onThrottleOverride,
+    etaEstimate = null,
 }: RightPanelProps) {
     const file = selectedFile;
     const hasPreview = !!(selectedFile || selectedHit);
@@ -106,7 +115,7 @@ export function RightPanel({
         if (tabRequest.tab === 'progress' && !hasIndexing) return;
         if (tabRequest.tab === 'preview' && !hasPreview) return;
         setActiveTab(tabRequest.tab);
-    }, [tabRequest?.nonce, tabRequest?.tab, hasIndexing, hasPreview]);
+    }, [tabRequest, hasIndexing, hasPreview]);
     const isImage = file?.kind === 'image' || file?.extension?.match(/^(jpg|jpeg|png|gif|webp|bmp)$/i);
     const isPdf = file?.extension?.toLowerCase() === 'pdf';
     const isVideo = file?.kind === 'video' || file?.extension?.match(/^(mp4|webm|ogg|mov)$/i);
@@ -117,7 +126,7 @@ export function RightPanel({
     const [fullContext, setFullContext] = useState<string | null>(null);
     const [fullContextError, setFullContextError] = useState<string | null>(null);
     const [showFullContext, setShowFullContext] = useState(false);
-    
+
     // Privacy state
     const [privacyLevel, setPrivacyLevel] = useState<PrivacyLevel>('normal');
     const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
@@ -353,7 +362,7 @@ export function RightPanel({
 
     const pageGroups = useMemo(() => {
         const groups = new Map<number, { page: number; firstChunkId: string; count: number; startIdx: number; endIdx: number }>();
-        
+
         chunks.forEach((chunk, index) => {
             // If page number is missing for the first chunk of a PDF, assume it's page 1
             let page = resolvePageNumber(chunk.metadata);
@@ -361,9 +370,9 @@ export function RightPanel({
             if (page === null) page = 1; // Fallback for grouping
 
             if (!groups.has(page)) {
-                groups.set(page, { 
-                    page, 
-                    firstChunkId: chunk.chunk_id, 
+                groups.set(page, {
+                    page,
+                    firstChunkId: chunk.chunk_id,
                     count: 0,
                     startIdx: index + 1,
                     endIdx: index + 1
@@ -373,14 +382,14 @@ export function RightPanel({
             group.count++;
             group.endIdx = index + 1;
         });
-        
+
         return Array.from(groups.values()).sort((a, b) => a.page - b.page);
     }, [chunks, isPdf]);
 
     const handlePageChange = (delta: number) => {
         const newPage = pageNumber + delta;
         if (newPage < 1) return;
-        
+
         const targetGroup = pageGroups.find(g => g.page === newPage);
         if (targetGroup) {
             setSelectedChunkId(targetGroup.firstChunkId);
@@ -492,11 +501,11 @@ export function RightPanel({
     // PDF region zoom handlers
     const handlePdfMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (!pdfContainerRef.current) return;
-        
+
         const rect = pdfContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        
+
         if (pdfViewBox) {
             // Already zoomed: start panning
             setIsDraggingPan(true);
@@ -515,21 +524,21 @@ export function RightPanel({
             const containerRect = pdfContainerRef.current.getBoundingClientRect();
             const deltaX = e.clientX - panStart.x;
             const deltaY = e.clientY - panStart.y;
-            
+
             // Simple pan: convert pixel movement to normalized movement
             // The viewBox represents what fraction of the image is shown
             // Moving 1 container-width should move the view by viewBox.width
             const normalizedDeltaX = -deltaX / containerRect.width * pdfViewBox.width;
             const normalizedDeltaY = -deltaY / containerRect.height * pdfViewBox.height;
-            
+
             // Update viewBox position (allow some overflow for smooth panning)
             let newX = pdfViewBox.x + normalizedDeltaX;
             let newY = pdfViewBox.y + normalizedDeltaY;
-            
+
             // Soft bounds: allow panning but keep at least 10% of image visible
             newX = Math.max(-pdfViewBox.width * 0.5, Math.min(1 - pdfViewBox.width * 0.5, newX));
             newY = Math.max(-pdfViewBox.height * 0.5, Math.min(1 - pdfViewBox.height * 0.5, newY));
-            
+
             setPdfViewBox({
                 ...pdfViewBox,
                 x: newX,
@@ -538,18 +547,18 @@ export function RightPanel({
             setPanStart({ x: e.clientX, y: e.clientY });
             return;
         }
-        
+
         if (!isDrawingSelection || !selectionStart || !pdfContainerRef.current) return;
-        
+
         const rect = pdfContainerRef.current.getBoundingClientRect();
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
-        
+
         const x = Math.min(selectionStart.x, currentX);
         const y = Math.min(selectionStart.y, currentY);
         const width = Math.abs(currentX - selectionStart.x);
         const height = Math.abs(currentY - selectionStart.y);
-        
+
         setSelectionRect({ x, y, width, height });
     }, [isDrawingSelection, selectionStart, isDraggingPan, panStart, pdfViewBox]);
 
@@ -560,48 +569,48 @@ export function RightPanel({
             setPanStart(null);
             return;
         }
-        
+
         if (!isDrawingSelection || !selectionRect || !pdfContainerRef.current || !pdfImageRef.current) {
             setIsDrawingSelection(false);
             setSelectionStart(null);
             return;
         }
-        
+
         // Only zoom if selection is large enough (at least 20x20 pixels)
         if (selectionRect.width > 20 && selectionRect.height > 20) {
             const containerRect = pdfContainerRef.current.getBoundingClientRect();
             const imgRect = pdfImageRef.current.getBoundingClientRect();
-            
+
             // Calculate image position relative to container
             const imgOffsetX = imgRect.left - containerRect.left;
             const imgOffsetY = imgRect.top - containerRect.top;
             const imgWidth = imgRect.width;
             const imgHeight = imgRect.height;
-            
+
             // Convert selection from container coords to image coords
             const selInImgX = selectionRect.x - imgOffsetX;
             const selInImgY = selectionRect.y - imgOffsetY;
-            
+
             // Normalize to 0-1 range relative to image
             const normalizedX = selInImgX / imgWidth;
             const normalizedY = selInImgY / imgHeight;
             const normalizedW = selectionRect.width / imgWidth;
             const normalizedH = selectionRect.height / imgHeight;
-            
+
             // Clamp to valid range (0 to 1)
             const clampedX = Math.max(0, Math.min(1, normalizedX));
             const clampedY = Math.max(0, Math.min(1, normalizedY));
             const clampedW = Math.max(0.05, Math.min(1 - clampedX, normalizedW));
             const clampedH = Math.max(0.05, Math.min(1 - clampedY, normalizedH));
-            
-            console.log('Selection:', { 
+
+            console.log('Selection:', {
                 selection: selectionRect,
                 imgOffset: { x: imgOffsetX, y: imgOffsetY },
                 imgSize: { w: imgWidth, h: imgHeight },
                 normalized: { x: normalizedX, y: normalizedY, w: normalizedW, h: normalizedH },
                 clamped: { x: clampedX, y: clampedY, w: clampedW, h: clampedH }
             });
-            
+
             setPdfViewBox({
                 x: clampedX,
                 y: clampedY,
@@ -609,7 +618,7 @@ export function RightPanel({
                 height: clampedH,
             });
         }
-        
+
         setIsDrawingSelection(false);
         setSelectionStart(null);
         setSelectionRect(null);
@@ -642,14 +651,14 @@ export function RightPanel({
             setFullContextError(null);
         }
     }, [activeChunk]);
-    
+
     // Load privacy level when file changes
     useEffect(() => {
         if (!fileId || !window.api?.getFilePrivacy) {
             setPrivacyLevel('normal');
             return;
         }
-        
+
         window.api.getFilePrivacy(fileId)
             .then((result) => {
                 setPrivacyLevel(result.privacyLevel || 'normal');
@@ -659,14 +668,14 @@ export function RightPanel({
                 setPrivacyLevel('normal');
             });
     }, [fileId]);
-    
+
     // Toggle privacy level
     const handleTogglePrivacy = useCallback(async () => {
         if (!fileId || !window.api?.setFilePrivacy || isUpdatingPrivacy) return;
-        
+
         setIsUpdatingPrivacy(true);
         const newLevel: PrivacyLevel = privacyLevel === 'normal' ? 'private' : 'normal';
-        
+
         try {
             const result = await window.api.setFilePrivacy(fileId, newLevel);
             setPrivacyLevel(result.privacyLevel);
@@ -698,7 +707,7 @@ export function RightPanel({
     };
 
     return (
-        <div 
+        <div
             className="relative flex h-full flex-col border-l bg-background shadow-xl z-20"
             style={{ width: panelWidth }}
         >
@@ -750,6 +759,9 @@ export function RightPanel({
                         onRemoveItem={onRemoveFromQueue}
                         onPauseIndexing={onPauseIndexing}
                         onResumeIndexing={onResumeIndexing}
+                        systemResourceStatus={systemResourceStatus}
+                        onThrottleOverride={onThrottleOverride}
+                        etaEstimate={etaEstimate}
                     />
                 ) : null}
 
@@ -774,7 +786,7 @@ export function RightPanel({
                                     Open in Default App
                                 </button>
                             </div>
-                            
+
                             {/* Privacy Toggle */}
                             <div className="mt-4 pt-4 border-t">
                                 <div className="flex items-center justify-between">
@@ -789,7 +801,7 @@ export function RightPanel({
                                                 {privacyLevel === 'private' ? 'Private' : 'Normal'}
                                             </p>
                                             <p className="text-[10px] text-muted-foreground">
-                                                {privacyLevel === 'private' 
+                                                {privacyLevel === 'private'
                                                     ? 'Hidden from external access'
                                                     : 'Accessible by external agents'
                                                 }
@@ -799,17 +811,15 @@ export function RightPanel({
                                     <button
                                         onClick={handleTogglePrivacy}
                                         disabled={isUpdatingPrivacy}
-                                        className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
-                                            privacyLevel === 'private'
+                                        className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${privacyLevel === 'private'
                                                 ? 'bg-amber-500'
                                                 : 'bg-muted'
-                                        } ${isUpdatingPrivacy ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            } ${isUpdatingPrivacy ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         title={privacyLevel === 'private' ? 'Make Normal' : 'Make Private'}
                                     >
                                         <span
-                                            className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                                privacyLevel === 'private' ? 'translate-x-5' : 'translate-x-0'
-                                            }`}
+                                            className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${privacyLevel === 'private' ? 'translate-x-5' : 'translate-x-0'
+                                                }`}
                                         />
                                     </button>
                                 </div>
@@ -856,15 +866,14 @@ export function RightPanel({
                                         </button>
                                     </div>
                                 </div>
-                                
+
                                 {/* PDF Image with Region Zoom - Fixed height container */}
-                                <div 
+                                <div
                                     ref={pdfContainerRef}
-                                    className={`relative rounded border bg-white overflow-hidden select-none ${
-                                        pdfViewBox 
-                                            ? (isDraggingPan ? 'cursor-grabbing' : 'cursor-grab') 
+                                    className={`relative rounded border bg-white overflow-hidden select-none ${pdfViewBox
+                                            ? (isDraggingPan ? 'cursor-grabbing' : 'cursor-grab')
                                             : 'cursor-crosshair'
-                                    }`}
+                                        }`}
                                     style={{ height: '400px' }}
                                     onMouseDown={handlePdfMouseDown}
                                     onMouseMove={handlePdfMouseMove}
@@ -880,22 +889,22 @@ export function RightPanel({
                                             {pdfViewBox ? (() => {
                                                 // Calculate zoom scale to fit the selected region in container
                                                 const scale = Math.min(1 / pdfViewBox.width, 1 / pdfViewBox.height);
-                                                
+
                                                 // After scaling, calculate how much of the container the region fills
                                                 // If scale = 1/width, region fills 100% width; if scale = 1/height, fills 100% height
                                                 const scaledRegionW = pdfViewBox.width * scale; // fraction of container width
                                                 const scaledRegionH = pdfViewBox.height * scale; // fraction of container height
-                                                
+
                                                 // Calculate centering offset (in image coordinate %)
                                                 // The empty space is (1 - scaledRegion), half goes on each side
                                                 // Convert from container-relative to image-relative by dividing by scale
                                                 const centerOffsetX = (1 - scaledRegionW) / (2 * scale);
                                                 const centerOffsetY = (1 - scaledRegionH) / (2 * scale);
-                                                
+
                                                 // Final translate: move region to top-left, then add centering offset
                                                 const translateX = (-pdfViewBox.x + centerOffsetX) * 100;
                                                 const translateY = (-pdfViewBox.y + centerOffsetY) * 100;
-                                                
+
                                                 return (
                                                     <img
                                                         ref={pdfImageRef}
@@ -928,7 +937,7 @@ export function RightPanel({
                                             Failed to load preview
                                         </div>
                                     )}
-                                    
+
                                     {/* Source regions spotlight overlay */}
                                     {!pdfViewBox && imgBounds && activeChunk?.page_num === pageNumber && (() => {
                                         // Prefer source_regions (per-block), fall back to single bbox
@@ -1007,7 +1016,7 @@ export function RightPanel({
                                             }}
                                         />
                                     )}
-                                    
+
                                     {/* Hint overlay */}
                                     {!isDrawingSelection && !isDraggingPan && pdfPageImage && !pdfImageLoading && (
                                         <div className="absolute bottom-2 left-2 right-2 flex items-center justify-center pointer-events-none z-10">
@@ -1018,7 +1027,7 @@ export function RightPanel({
                                         </div>
                                     )}
                                 </div>
-                                
+
                                 {/* Zoom controls */}
                                 <div className="absolute bottom-6 right-6 flex flex-col gap-2 bg-background/90 backdrop-blur border rounded-lg shadow-lg p-1.5">
                                     <button
@@ -1052,7 +1061,7 @@ export function RightPanel({
                                                 // Keep centered
                                                 const newX = Math.max(0, Math.min(1 - newWidth, pdfViewBox.x - (newWidth - pdfViewBox.width) / 2));
                                                 const newY = Math.max(0, Math.min(1 - newHeight, pdfViewBox.y - (newHeight - pdfViewBox.height) / 2));
-                                                
+
                                                 // If we're back to full view, reset
                                                 if (newWidth >= 0.95 && newHeight >= 0.95) {
                                                     setPdfViewBox(null);

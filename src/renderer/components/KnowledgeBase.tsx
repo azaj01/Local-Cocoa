@@ -11,8 +11,10 @@ import type {
     IndexResultSnapshot,
     IndexProgressUpdate,
     IndexingItem,
+    SystemResourceStatus,
 } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { StageEta } from '../hooks/useEtaEstimator';
 
 interface KnowledgeBaseProps {
     folders: FolderRecord[];
@@ -21,13 +23,17 @@ interface KnowledgeBaseProps {
     snapshot: IndexResultSnapshot | null;
     isIndexing: boolean;
     indexProgress?: IndexProgressUpdate | null;
-    
+
     // Staged indexing progress
     stageProgress?: StagedIndexProgress | null;
+    systemResourceStatus?: SystemResourceStatus | null;
     onStartSemantic?: () => Promise<void>;
     onStopSemantic?: () => Promise<void>;
     onStartDeep?: () => Promise<void>;
     onStopDeep?: () => Promise<void>;
+    onThrottleOverride?: () => Promise<void>;
+    /** Per-stage ETA from useEtaEstimator */
+    stageEtas?: Record<string, StageEta> | null;
 
     // Folder actions
     onAddFolder: () => Promise<void>;
@@ -41,7 +47,7 @@ interface KnowledgeBaseProps {
     onSelectFile: (file: IndexedFile) => void;
     onOpenFile?: (file: IndexedFile) => void | Promise<void>;
     onAskAboutFile: (file: IndexedFile) => Promise<void>;
-    
+
     // Data refresh
     onRefresh?: () => void | Promise<void>;
 }
@@ -50,20 +56,23 @@ type View = 'files' | 'search' | 'scan';
 
 export function KnowledgeBase({
     folders,
-    folderStats,
+    folderStats: _folderStats,
     files,
     snapshot,
     isIndexing,
-    indexProgress,
+    indexProgress: _indexProgress,
     stageProgress,
+    systemResourceStatus,
     onStartSemantic,
     onStopSemantic,
     onStartDeep,
     onStopDeep,
+    onThrottleOverride,
+    stageEtas,
     onAddFolder,
     onAddFile,
     onRemoveFolder,
-    onRescanFolder,
+    onRescanFolder: _onRescanFolder,
     onReindexFolder,
     indexingItems,
     onSelectFile,
@@ -141,7 +150,7 @@ export function KnowledgeBase({
                                 </button>
                             </div>
                         )}
-                        
+
                         {/* Back button for scan view */}
                         {activeView === 'scan' && (
                             <button
@@ -186,9 +195,12 @@ export function KnowledgeBase({
                                     onStopSemantic={onStopSemantic}
                                     onStartDeep={onStartDeep}
                                     onStopDeep={onStopDeep}
+                                    systemResourceStatus={systemResourceStatus}
+                                    onThrottleOverride={onThrottleOverride}
+                                    stageEtas={stageEtas}
                                 />
                             )}
-                            
+
                             {/* Files Panel */}
                             <div className="flex-1 min-h-0 overflow-hidden">
                                 <IndexedFilesPanel

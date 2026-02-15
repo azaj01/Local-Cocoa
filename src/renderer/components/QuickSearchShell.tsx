@@ -20,7 +20,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function QuickSearchShell() {
-    const { config } = useModelConfig();
+    const { config: _config } = useModelConfig();
     const [mode, setMode] = useState<SpotlightMode>('rag');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchHit[]>([]);
@@ -41,7 +41,7 @@ export function QuickSearchShell() {
     const [resumeToken, setResumeToken] = useState<string | null>(null);
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<PaletteTab>('search');
+    const [_activeTab, setActiveTab] = useState<PaletteTab>('search');
 
     useEffect(() => {
         document.body.classList.add('spotlight-shell');
@@ -376,7 +376,7 @@ export function QuickSearchShell() {
                 }
             }
         },
-        [mode, config]
+        [mode]
     );
 
     const handleClose = useCallback(() => {
@@ -461,14 +461,16 @@ export function QuickSearchShell() {
     }, [mode, query, runQuery]);
 
     useEffect(() => {
-        setResults([]);
-        setQaAnswer(null);
-        setQaMeta(null);
-        setStatusMessage(
-            mode === 'qa'
-                ? 'Agent QA mode · ask a question about your local files.'
-                : 'File search mode · type to search indexed files.'
-        );
+        setTimeout(() => {
+            setResults([]);
+            setQaAnswer(null);
+            setQaMeta(null);
+            setStatusMessage(
+                mode === 'qa'
+                    ? 'Agent QA mode · ask a question about your local files.'
+                    : 'File search mode · type to search indexed files.'
+            );
+        }, 0);
     }, [mode]);
 
     const handleModeChange = useCallback(

@@ -144,6 +144,7 @@ export function ExtensionsView({
                 throw new Error(`Could not find export for component ${componentName || 'default'} in ${fullPath}`);
             });
 
+            // eslint-disable-next-line react-hooks/immutability -- cache is a stable Map from useMemo, mutation is intentional
             pluginComponentCache.set(cacheKey, Component);
             return Component;
         }
@@ -231,6 +232,7 @@ export function ExtensionsView({
         refreshData,
         isActivityTracking,
         handleToggleActivityTracking,
+        indexedFiles,
     ]);
 
     // Show loading state while plugins are loading

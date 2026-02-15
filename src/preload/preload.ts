@@ -127,6 +127,27 @@ const api = {
     showInFolder: (filePath: string): Promise<boolean> => ipcRenderer.invoke('system:show-in-folder', filePath),
     getSystemSpecs: (): Promise<{ totalMemory: number; platform: string; arch: string; cpus: number }> =>
         ipcRenderer.invoke('system:specs'),
+    getSystemResourceStatus: (): Promise<{
+        cpu_percent: number;
+        gpu_percent: number | null;
+        gpu_memory_percent: number | null;
+        memory_percent: number;
+        memory_used_gb: number;
+        memory_total_gb: number;
+        memory_available_gb: number;
+        on_battery: boolean;
+        battery_percent: number | null;
+        llama_cpu_percent: number;
+        llama_memory_mb: number;
+        throttled: boolean;
+        throttle_reason: string | null;
+    }> => ipcRenderer.invoke('system:resource-status'),
+    throttleOverride: (durationMinutes?: number): Promise<{ active: boolean; remaining_seconds: number }> =>
+        ipcRenderer.invoke('system:throttle-override', durationMinutes),
+    throttleOverrideCancel: (): Promise<{ active: boolean; remaining_seconds: number }> =>
+        ipcRenderer.invoke('system:throttle-override-cancel'),
+    throttleOverrideStatus: (): Promise<{ active: boolean; remaining_seconds: number }> =>
+        ipcRenderer.invoke('system:throttle-override-status'),
     saveImage: (options: { data: string; defaultName?: string; title?: string }): Promise<{ saved: boolean; path: string | null }> =>
         ipcRenderer.invoke('system:save-image', options),
     exportLogs: (): Promise<{ exported: boolean; path: string | null; error?: string }> =>

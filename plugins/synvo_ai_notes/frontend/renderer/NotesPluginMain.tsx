@@ -28,7 +28,7 @@ export function NotesPluginMain({
     const {
         noteIndexingItems,
         loading: dataLoading,
-        refreshData: refreshPluginData
+        refreshData: _refreshPluginData
     } = useNotesPluginData();
 
     // Load notes on mount

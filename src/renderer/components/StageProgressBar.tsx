@@ -4,17 +4,21 @@
 
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { 
+import {
     CheckCircle,
     Circle,
     Play,
     Pause,
     X,
     AlertCircle,
+    AlertTriangle,
     FolderOpen,
+    Zap,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { SystemResourceStatus } from '../types';
+import type { StageEta } from '../hooks/useEtaEstimator';
 
 interface ErrorFile {
     id: string;
@@ -31,6 +35,10 @@ interface StageProgressBarProps {
     onStartDeep?: () => Promise<void>;
     onStopDeep?: () => Promise<void>;
     className?: string;
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
+    /** Per-stage ETA estimates from useEtaEstimator */
+    stageEtas?: Record<string, StageEta> | null;
 }
 
 function clampPercent(value: number | null | undefined): number {
@@ -49,19 +57,22 @@ interface StageProps {
     isRunning?: boolean;
     isLoading?: boolean;
     onToggle?: () => void;
+    /** ETA label to show below the progress bar */
+    etaLabel?: string | null;
 }
 
-function Stage({ 
-    label, 
-    percent, 
-    count, 
-    total, 
-    isComplete, 
+function Stage({
+    label,
+    percent,
+    count,
+    total,
+    isComplete,
     color,
     showControl,
     isRunning,
     isLoading,
     onToggle,
+    etaLabel,
 }: StageProps) {
     const colors = {
         emerald: {
@@ -99,11 +110,11 @@ function Stage({
                 ) : (
                     <Circle className={cn("w-4 h-4 shrink-0", colors.icon)} />
                 )}
-                
+
                 <span className={cn("text-sm font-medium", colors.text)}>
                     {label}
                 </span>
-                
+
                 {showControl && onToggle && (
                     <button
                         onClick={onToggle}
@@ -122,7 +133,7 @@ function Stage({
                         )}
                     </button>
                 )}
-                
+
                 <div className="flex items-baseline gap-1.5 ml-auto shrink-0">
                     <span className={cn("text-sm font-semibold tabular-nums", colors.text)}>
                         {percent}%
@@ -132,32 +143,41 @@ function Stage({
                     </span>
                 </div>
             </div>
-            
+
             {/* Progress bar */}
             <div className={cn("h-1.5 rounded-full overflow-hidden", colors.barBg)}>
-                <div 
+                <div
                     className={cn("h-full rounded-full transition-all duration-500 ease-out", colors.bar)}
                     style={{ width: `${percent}%` }}
                 />
             </div>
+
+            {/* ETA */}
+            {etaLabel && !isComplete && (
+                <p className="text-[10px] text-muted-foreground mt-1 tabular-nums">{etaLabel}</p>
+            )}
         </div>
     );
 }
 
-export function StageProgressBar({ 
-    progress, 
+export function StageProgressBar({
+    progress,
     onStartSemantic,
     onStopSemantic,
-    onStartDeep, 
+    onStartDeep,
     onStopDeep,
-    className 
+    className,
+    systemResourceStatus,
+    onThrottleOverride,
+    stageEtas,
 }: StageProgressBarProps) {
     const [semanticLoading, setSemanticLoading] = useState(false);
     const [deepLoading, setDeepLoading] = useState(false);
+    const [overrideLoading, setOverrideLoading] = useState(false);
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [errorFiles, setErrorFiles] = useState<ErrorFile[]>([]);
     const [loadingErrors, setLoadingErrors] = useState(false);
-    
+
     const handleFailedClick = useCallback(async () => {
         setShowErrorModal(true);
         setLoadingErrors(true);
@@ -173,7 +193,7 @@ export function StageProgressBar({
             setLoadingErrors(false);
         }
     }, []);
-    
+
     const handleShowInFolder = useCallback(async (filePath: string) => {
         try {
             const api = window.api;
@@ -184,7 +204,7 @@ export function StageProgressBar({
             console.error('Failed to show file in folder:', error);
         }
     }, []);
-    
+
     const handleToggleSemantic = useCallback(async () => {
         if (!progress) return;
         setSemanticLoading(true);
@@ -198,7 +218,7 @@ export function StageProgressBar({
             setSemanticLoading(false);
         }
     }, [progress, onStartSemantic, onStopSemantic]);
-    
+
     const handleToggleDeep = useCallback(async () => {
         if (!progress) return;
         setDeepLoading(true);
@@ -212,27 +232,49 @@ export function StageProgressBar({
             setDeepLoading(false);
         }
     }, [progress, onStartDeep, onStopDeep]);
-    
+
     if (!progress) {
         return null;
     }
-    
+
     const textPercent = clampPercent(progress.fast_text.percent);
     const embedPercent = clampPercent(progress.fast_embed.percent);
     const deepPercent = clampPercent(progress.deep.percent);
-    
+
     const textComplete = textPercent >= 100;
     const embedComplete = embedPercent >= 100;
     const deepComplete = deepPercent >= 100;
-    
+
     const totalErrors = progress.fast_text.error + progress.fast_embed.error + progress.deep.error;
     const skipped = progress.deep.skipped ?? 0;
-    
+
     const showSemanticControl = textComplete && !embedComplete && (onStartSemantic || onStopSemantic);
     const showDeepControl = embedComplete && !deepComplete && (onStartDeep || onStopDeep);
-    
+
     return (
         <div className={cn("rounded-xl border bg-card/80 backdrop-blur-sm p-4", className)}>
+            {/* Throttle banner */}
+            {systemResourceStatus?.throttled && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 mb-3 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate flex-1">Indexing paused: {systemResourceStatus.throttleReason ?? 'System under load'}</span>
+                    {onThrottleOverride && (
+                        <button
+                            onClick={async () => {
+                                setOverrideLoading(true);
+                                try { await onThrottleOverride(); } finally { setOverrideLoading(false); }
+                            }}
+                            disabled={overrideLoading}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors"
+                            title="Continue indexing for 30 minutes despite current conditions"
+                        >
+                            <Zap className="h-3 w-3" />
+                            {overrideLoading ? 'Resuming…' : 'Override'}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* Three stages */}
             <div className="flex items-start gap-6">
                 <Stage
@@ -242,8 +284,9 @@ export function StageProgressBar({
                     total={progress.total}
                     isComplete={textComplete}
                     color="emerald"
+                    etaLabel={stageEtas?.fast_text?.label}
                 />
-                
+
                 <Stage
                     label="Semantic"
                     percent={embedPercent}
@@ -255,12 +298,13 @@ export function StageProgressBar({
                     isRunning={progress.semantic_enabled}
                     isLoading={semanticLoading}
                     onToggle={handleToggleSemantic}
+                    etaLabel={stageEtas?.fast_embed?.label}
                 />
-                
+
                 <Stage
                     label="Vision"
                     percent={deepPercent}
-                    count={progress.deep.done}
+                    count={progress.deep.done + (progress.deep.skipped ?? 0)}
                     total={progress.total}
                     isComplete={deepComplete}
                     color="violet"
@@ -268,9 +312,10 @@ export function StageProgressBar({
                     isRunning={progress.deep_enabled}
                     isLoading={deepLoading}
                     onToggle={handleToggleDeep}
+                    etaLabel={stageEtas?.deep?.label}
                 />
             </div>
-            
+
             {/* Footer */}
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground">
                 <span>{progress.total} files total</span>
@@ -280,7 +325,7 @@ export function StageProgressBar({
                             <span className="text-amber-500">{skipped} skipped</span>
                         )}
                         {totalErrors > 0 && (
-                            <button 
+                            <button
                                 onClick={handleFailedClick}
                                 className="text-red-500 hover:text-red-600 hover:underline cursor-pointer transition-colors"
                             >
@@ -290,32 +335,32 @@ export function StageProgressBar({
                     </div>
                 )}
             </div>
-            
+
             {/* Error Files Drawer - Portal to body for proper positioning */}
             {showErrorModal && createPortal(
-                <div 
+                <div
                     className="fixed inset-0 z-50"
                     style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                 >
                     {/* Backdrop */}
-                    <div 
-                        className="absolute inset-0 bg-black/30" 
+                    <div
+                        className="absolute inset-0 bg-black/30"
                         onClick={() => setShowErrorModal(false)}
                     />
-                    
+
                     {/* Right Panel - matching RightPanel.tsx style */}
-                    <div 
+                    <div
                         className="absolute inset-y-0 right-0 w-[480px] max-w-[90vw] flex flex-col border-l bg-background shadow-xl"
                     >
                         {/* Header - matching RightPanel style */}
                         <div className="flex items-center justify-between gap-2 border-b p-4 bg-muted/10 shrink-0">
                             <div className="flex items-center gap-2">
-                                <button 
+                                <button
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setShowErrorModal(false);
-                                    }} 
+                                    }}
                                     className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
                                 >
                                     <X className="h-4 w-4" />
@@ -326,7 +371,7 @@ export function StageProgressBar({
                                 {errorFiles.length} file{errorFiles.length !== 1 ? 's' : ''}
                             </span>
                         </div>
-                        
+
                         {/* Content */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
                             {loadingErrors ? (
@@ -349,11 +394,11 @@ export function StageProgressBar({
                                             <span className="font-medium text-foreground">Tip:</span> Click any file to reveal it in Finder. Common causes include encrypted PDFs, corrupted files, or wrong file extensions.
                                         </p>
                                     </div>
-                                    
+
                                     {/* File list */}
                                     <div className="space-y-2">
                                         {errorFiles.map((file) => (
-                                            <div 
+                                            <div
                                                 key={file.id}
                                                 onClick={() => handleShowInFolder(file.path)}
                                                 className="rounded-lg border bg-card p-4 shadow-sm hover:bg-accent/50 transition-colors cursor-pointer group"

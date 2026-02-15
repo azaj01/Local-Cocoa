@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Activity, FileText, Image as ImageIcon, Video, Music, X, Pause, Play, ChevronDown, ChevronUp, Search, Brain, Eye, Loader2 } from 'lucide-react';
+import { Activity, FileText, Image as ImageIcon, Video, Music, X, Pause, Play, ChevronDown, ChevronUp, Search, Brain, Eye, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
-import type { IndexProgressUpdate, IndexingItem } from '../types';
+import type { IndexProgressUpdate, IndexingItem, SystemResourceStatus } from '../types';
 import type { StagedIndexProgress } from '../../electron/backendClient';
+import type { EtaEstimate } from '../hooks/useEtaEstimator';
 
 function basename(pathValue: string): string {
     const parts = (pathValue ?? '').split(/[/\\]/).filter(Boolean);
@@ -35,34 +36,34 @@ function extractPageLabel(text?: string | null): string | null {
 }
 
 // Stage badge component
-function StageBadge({ 
-    stage, 
-    isActive 
-}: { 
+function StageBadge({
+    stage,
+    isActive
+}: {
     stage: 'keyword' | 'semantic' | 'vision';
     isActive: boolean;
 }) {
     const config = {
-        keyword: { 
-            icon: Search, 
-            label: 'Keyword', 
-            color: 'text-emerald-500', 
-            bg: 'bg-emerald-500/10', 
-            border: 'border-emerald-500/30' 
+        keyword: {
+            icon: Search,
+            label: 'Keyword',
+            color: 'text-emerald-500',
+            bg: 'bg-emerald-500/10',
+            border: 'border-emerald-500/30'
         },
-        semantic: { 
-            icon: Brain, 
-            label: 'Semantic', 
-            color: 'text-blue-500', 
-            bg: 'bg-blue-500/10', 
-            border: 'border-blue-500/30' 
+        semantic: {
+            icon: Brain,
+            label: 'Semantic',
+            color: 'text-blue-500',
+            bg: 'bg-blue-500/10',
+            border: 'border-blue-500/30'
         },
-        vision: { 
-            icon: Eye, 
-            label: 'Vision', 
-            color: 'text-purple-500', 
-            bg: 'bg-purple-500/10', 
-            border: 'border-purple-500/30' 
+        vision: {
+            icon: Eye,
+            label: 'Vision',
+            color: 'text-purple-500',
+            bg: 'bg-purple-500/10',
+            border: 'border-purple-500/30'
         },
     }[stage];
 
@@ -94,6 +95,9 @@ export function IndexProgressPanel({
     onRemoveItem,
     onPauseIndexing,
     onResumeIndexing,
+    systemResourceStatus = null,
+    onThrottleOverride,
+    etaEstimate = null,
 }: {
     isIndexing: boolean;
     progress: IndexProgressUpdate | null;
@@ -102,6 +106,10 @@ export function IndexProgressPanel({
     onRemoveItem?: (filePath: string) => void;
     onPauseIndexing?: () => void;
     onResumeIndexing?: () => void;
+    systemResourceStatus?: SystemResourceStatus | null;
+    onThrottleOverride?: () => Promise<void>;
+    /** ETA estimates for stages and current file */
+    etaEstimate?: EtaEstimate | null;
 }) {
     const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
     const processing = indexingItems.find((item) => item.status === 'processing') ?? null;
@@ -111,11 +119,11 @@ export function IndexProgressPanel({
     // Determine current active stage from stageProgress
     const activeStage = useMemo(() => {
         if (!stageProgress || stageProgress.total === 0) return null;
-        
+
         const textPercent = clampPercent(stageProgress.fast_text.percent);
         const embedPercent = clampPercent(stageProgress.fast_embed.percent);
         const deepPercent = clampPercent(stageProgress.deep.percent);
-        
+
         // Check which stage is actively running
         if (textPercent < 100) return 'keyword';
         if (stageProgress.semantic_enabled && embedPercent < 100) return 'semantic';
@@ -126,7 +134,7 @@ export function IndexProgressPanel({
     // Get stage-specific progress info
     const stageInfo = useMemo(() => {
         if (!stageProgress || !activeStage) return null;
-        
+
         const stages = {
             keyword: {
                 done: stageProgress.fast_text.done,
@@ -139,7 +147,7 @@ export function IndexProgressPanel({
                 percent: clampPercent(stageProgress.fast_embed.percent),
             },
             vision: {
-                done: stageProgress.deep.done,
+                done: stageProgress.deep.done + (stageProgress.deep.skipped ?? 0),
                 total: stageProgress.total,
                 percent: clampPercent(stageProgress.deep.percent),
             },
@@ -148,13 +156,15 @@ export function IndexProgressPanel({
     }, [stageProgress, activeStage]);
 
     const headerMessage =
-        progress?.status === 'running'
-            ? (progress?.message ?? 'Indexing…')
-            : progress?.status === 'failed'
-                ? (progress?.lastError ?? 'Indexing failed')
-                : progress?.status === 'completed'
-                    ? 'Indexing completed'
-                    : 'Idle';
+        systemResourceStatus?.throttled
+            ? `Paused: ${systemResourceStatus.throttleReason ?? 'System load'}`
+            : progress?.status === 'running'
+                ? (progress?.message ?? 'Indexing…')
+                : progress?.status === 'failed'
+                    ? (progress?.lastError ?? 'Indexing failed')
+                    : progress?.status === 'completed'
+                        ? 'Indexing completed'
+                        : 'Idle';
 
     const processed = progress?.processed ?? 0;
     const total = progress?.total ?? null;
@@ -174,9 +184,13 @@ export function IndexProgressPanel({
                     <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
                         <div className={cn(
                             "h-10 w-10 rounded flex items-center justify-center shrink-0",
-                            activeStage ? "bg-primary/10" : "bg-muted"
+                            systemResourceStatus?.throttled
+                                ? "bg-amber-500/10"
+                                : activeStage ? "bg-primary/10" : "bg-muted"
                         )}>
-                            {activeStage ? (
+                            {systemResourceStatus?.throttled ? (
+                                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                            ) : activeStage ? (
                                 <Loader2 className="h-5 w-5 text-primary animate-spin" />
                             ) : (
                                 <Activity className="h-5 w-5 text-muted-foreground" />
@@ -185,11 +199,21 @@ export function IndexProgressPanel({
                         <div className="min-w-0 flex-1 overflow-hidden">
                             <div className="flex items-center gap-2">
                                 <p className="text-base font-semibold">Index Progress</p>
-                                {activeStage && (
+                                {activeStage && !systemResourceStatus?.throttled && (
                                     <StageBadge stage={activeStage} isActive={true} />
                                 )}
                             </div>
-                            <p className="text-xs text-muted-foreground truncate" title={headerMessage}>{headerMessage}</p>
+                            <p className={cn(
+                                "text-xs truncate",
+                                systemResourceStatus?.throttled ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground"
+                            )} title={headerMessage}>
+                                {headerMessage}
+                                {etaEstimate?.active?.label && !systemResourceStatus?.throttled && (
+                                    <span className="ml-2 text-muted-foreground/70 tabular-nums">
+                                        — {etaEstimate.active.label}
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
 
@@ -197,13 +221,13 @@ export function IndexProgressPanel({
                         <span className="rounded-full border bg-muted px-2.5 py-0.5">
                             {processed}{total ? ` / ${total}` : ''} processed
                         </span>
-                        <span>{pendingCount ? `${pendingCount} queued` : isIndexing ? 'Working…' : 'Idle'}</span>
+                        <span>{pendingCount ? `${pendingCount} queued` : systemResourceStatus?.throttled ? 'Throttled' : isIndexing ? 'Working…' : 'Idle'}</span>
                         {failed ? (
                             <span className="rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 text-destructive">
                                 {failed} failed
                             </span>
                         ) : null}
-                        
+
                         {/* Pause/Resume Button */}
                         {isIndexing && progress?.status === 'running' && onPauseIndexing && (
                             <button
@@ -223,6 +247,17 @@ export function IndexProgressPanel({
                             >
                                 <Play className="h-3 w-3" />
                                 Resume
+                            </button>
+                        )}
+                        {/* Override throttle button */}
+                        {systemResourceStatus?.throttled && onThrottleOverride && (
+                            <button
+                                onClick={() => void onThrottleOverride()}
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-amber-600 hover:bg-amber-500/20 transition-colors"
+                                title="Continue indexing for 30 min despite current conditions"
+                            >
+                                <Zap className="h-3 w-3" />
+                                Override
                             </button>
                         )}
                     </div>
@@ -259,7 +294,7 @@ export function IndexProgressPanel({
                                     activeStage === 'semantic' && "bg-blue-500",
                                     activeStage === 'vision' && "bg-purple-500"
                                 )}
-                                style={{ 
+                                style={{
                                     width: `${stageInfo.percent}%`,
                                     animation: stageInfo.percent < 100 ? 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' : 'none'
                                 }}
@@ -281,7 +316,14 @@ export function IndexProgressPanel({
                                     activeStage === 'vision' && "bg-purple-500"
                                 )} />
                             </span>
-                            <span>Processing files...</span>
+                            <span>
+                                Processing files…
+                                {etaEstimate?.active?.label && (
+                                    <span className="ml-1 tabular-nums text-muted-foreground/70">
+                                        — {etaEstimate.active.label}
+                                    </span>
+                                )}
+                            </span>
                         </div>
                     </div>
                 )}
@@ -313,10 +355,15 @@ export function IndexProgressPanel({
                                         ) : null}
                                     </p>
                                 </div>
-                                <div className="text-xs text-muted-foreground shrink-0">
+                                <div className="text-xs text-muted-foreground shrink-0 text-right">
                                     <span className="rounded-full border bg-muted px-2.5 py-0.5">
                                         {clampPercent(processing.progress)}%
                                     </span>
+                                    {etaEstimate?.fileEtaLabel && (
+                                        <p className="text-[10px] text-muted-foreground/70 mt-1 tabular-nums">
+                                            {etaEstimate.fileEtaLabel}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
@@ -429,7 +476,7 @@ export function IndexProgressPanel({
                                             {clampPercent(item.progress)}%
                                         </span>
                                     ) : null}
-                                    
+
                                     {/* Remove from queue button - only for pending items */}
                                     {item.status === 'pending' && onRemoveItem && (
                                         <button
